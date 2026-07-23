@@ -7,8 +7,13 @@ const MOTION_CHANNEL = `plugin:${PLUGIN_ID}:motion`;
 const DRAG_START_CHANNEL = `plugin:${PLUGIN_ID}:drag-start`;
 const DRAG_MOVE_CHANNEL = `plugin:${PLUGIN_ID}:drag-move`;
 const DRAG_END_CHANNEL = `plugin:${PLUGIN_ID}:drag-end`;
-const WINDOW_WIDTH = 160;
-const WINDOW_HEIGHT = 180;
+const PET_WINDOW_WIDTH = 160;
+const PET_WINDOW_HEIGHT = 151;
+const BUBBLE_WINDOW_WIDTH = 420;
+const BUBBLE_WINDOW_HEIGHT = 136;
+const BUBBLE_WINDOW_GAP = 8;
+const BUBBLE_CONTENT_INSET = 32;
+const BUBBLE_EDGE_MARGIN = 8;
 const WINDOW_MARGIN = 24;
 const POSITION_SAVE_DELAY_MS = 200;
 const MOVE_IDLE_DELAY_MS = 140;
@@ -32,6 +37,7 @@ const TERMINAL_DELAYS = Object.freeze({
 
 const runtime = {
   ctx: null,
+  bubbleWindow: null,
   petWindow: null,
   hostWindow: null,
   unsubscribeTask: null,
@@ -41,7 +47,8 @@ const runtime = {
   lastWindowX: null,
   dragState: null,
   dragIpcRegistered: false,
-  rendererReady: false,
+  petRendererReady: false,
+  bubbleRendererReady: false,
   latestStatus: createIdleStatus(),
 };
 
@@ -50,6 +57,8 @@ function createIdleStatus() {
   return {
     text: '当前无执行任务',
     tone: 'idle',
+    title: '当前无执行任务',
+    detail: '小易正在待命',
     taskType: null,
     status: 'idle',
     progress: 0,
@@ -79,22 +88,22 @@ function createTaskStatus(task) {
   };
 
   if (task.status === 'running') {
-    return { ...base, text: `${label} · ${progress}%`, tone: 'running' };
+    return { ...base, title: label, detail: `正在执行 · ${progress}%`, text: `${label} · ${progress}%`, tone: 'running' };
   }
   if (task.status === 'pausing') {
-    return { ...base, text: `${label} · 正在暂停`, tone: 'paused' };
+    return { ...base, title: label, detail: `正在暂停 · ${progress}%`, text: `${label} · 正在暂停`, tone: 'paused' };
   }
   if (task.status === 'paused') {
-    return { ...base, text: `${label} · 已暂停`, tone: 'paused' };
+    return { ...base, title: label, detail: '已暂停', text: `${label} · 已暂停`, tone: 'paused' };
   }
   if (task.status === 'success') {
-    return { ...base, text: `${label} · 已完成`, tone: 'success' };
+    return { ...base, title: label, detail: '已完成', text: `${label} · 已完成`, tone: 'success' };
   }
   if (task.status === 'error') {
-    return { ...base, text: `${label} · 执行失败`, tone: 'error' };
+    return { ...base, title: label, detail: '执行失败', text: `${label} · 执行失败`, tone: 'error' };
   }
 
-  return { ...base, text: `${label} · ${progress}%`, tone: 'running' };
+  return { ...base, title: label, detail: `正在执行 · ${progress}%`, text: `${label} · ${progress}%`, tone: 'running' };
 }
 
 /** 比较任务更新时间，用于选择最近活动的任务。 */
@@ -113,24 +122,30 @@ function getLatestActiveTask(excludedTaskId = null) {
     .filter((task) => !excludedTaskId || task.task_id !== excludedTaskId)
     .sort(compareTaskUpdatedAt)[0] || null;
 }
+/** 向仍然有效的插件窗口发送渲染消息。 */
+function sendToWindow(win, channel, payload) {
+  if (!win || win.isDestroyed() || win.webContents.isDestroyed()) {
+    return;
+  }
+  win.webContents.send(channel, payload);
+}
+
 
 /** 向桌宠渲染页发送最新状态。 */
 function publishStatus(status) {
   runtime.latestStatus = status;
-  const win = runtime.petWindow;
-  if (!runtime.rendererReady || !win || win.isDestroyed() || win.webContents.isDestroyed()) {
-    return;
+  if (runtime.petRendererReady) {
+    sendToWindow(runtime.petWindow, STATUS_CHANNEL, status);
   }
-  win.webContents.send(STATUS_CHANNEL, status);
+  if (runtime.bubbleRendererReady) {
+    sendToWindow(runtime.bubbleWindow, STATUS_CHANNEL, status);
+  }
 }
 
 /** 向渲染页发送窗口拖动方向。 */
 function publishMotion(motion) {
-  const win = runtime.petWindow;
-  if (!runtime.rendererReady || !win || win.isDestroyed() || win.webContents.isDestroyed()) {
-    return;
-  }
-  win.webContents.send(MOTION_CHANNEL, motion);
+  if (!runtime.petRendererReady) return;
+  sendToWindow(runtime.petWindow, MOTION_CHANNEL, motion);
 }
 
 /** 显示当前活动任务；没有任务时显示空闲。 */
@@ -187,10 +202,60 @@ function getInitialPosition(ctx) {
 
   const { workArea } = screen.getPrimaryDisplay();
   return {
-    x: workArea.x + workArea.width - WINDOW_WIDTH - WINDOW_MARGIN,
-    y: workArea.y + workArea.height - WINDOW_HEIGHT - WINDOW_MARGIN,
+    x: workArea.x + workArea.width - BUBBLE_WINDOW_WIDTH - WINDOW_MARGIN
+      + Math.round((BUBBLE_WINDOW_WIDTH - PET_WINDOW_WIDTH) / 2),
+    y: workArea.y + workArea.height - PET_WINDOW_HEIGHT - WINDOW_MARGIN,
   };
 }
+/** 将数值限制在指定闭区间。 */
+function clamp(value, minimum, maximum) {
+  return Math.min(Math.max(value, minimum), maximum);
+}
+
+/** 计算独立状态气泡相对于桌宠窗口的位置。 */
+function getBubbleWindowPosition() {
+  const petWindow = runtime.petWindow;
+  if (!petWindow || petWindow.isDestroyed()) return null;
+
+  const petBounds = petWindow.getBounds();
+  const { workArea } = screen.getDisplayMatching(petBounds);
+  const minimumX = workArea.x + BUBBLE_EDGE_MARGIN;
+  const maximumX = Math.max(
+    minimumX,
+    workArea.x + workArea.width - BUBBLE_WINDOW_WIDTH - BUBBLE_EDGE_MARGIN,
+  );
+  const minimumY = workArea.y + BUBBLE_EDGE_MARGIN;
+  const maximumY = Math.max(
+    minimumY,
+    workArea.y + workArea.height - BUBBLE_WINDOW_HEIGHT - BUBBLE_EDGE_MARGIN,
+  );
+  const desiredX = petBounds.x
+    + Math.round((PET_WINDOW_WIDTH - BUBBLE_WINDOW_WIDTH) / 2);
+  const aboveY = petBounds.y - BUBBLE_WINDOW_HEIGHT
+    + BUBBLE_CONTENT_INSET - BUBBLE_WINDOW_GAP;
+  const belowY = petBounds.y + PET_WINDOW_HEIGHT
+    + BUBBLE_WINDOW_GAP - BUBBLE_CONTENT_INSET;
+  const desiredY = aboveY >= minimumY
+    ? aboveY
+    : (belowY <= maximumY ? belowY : clamp(aboveY, minimumY, maximumY));
+
+  return {
+    x: clamp(desiredX, minimumX, maximumX),
+    y: desiredY,
+  };
+}
+
+/** 让独立状态气泡跟随桌宠窗口移动。 */
+function syncBubbleWindowPosition() {
+  const bubbleWindow = runtime.bubbleWindow;
+  const position = getBubbleWindowPosition();
+  if (!bubbleWindow || bubbleWindow.isDestroyed() || !position) return;
+
+  const [currentX, currentY] = bubbleWindow.getPosition();
+  if (currentX === position.x && currentY === position.y) return;
+  bubbleWindow.setPosition(position.x, position.y);
+}
+
 
 /** 延迟保存窗口位置，避免拖动期间频繁写配置。 */
 function schedulePositionSave() {
@@ -208,6 +273,7 @@ function schedulePositionSave() {
 
 /** 记录拖动方向，并在停止移动后恢复任务状态动画。 */
 function handlePetWindowMove() {
+  syncBubbleWindowPosition();
   schedulePositionSave();
 
   const win = runtime.petWindow;
@@ -316,8 +382,8 @@ function createPetWindow(ctx) {
   const position = getInitialPosition(ctx);
   runtime.lastWindowX = position.x;
   const win = ctx.createWindow({
-    width: WINDOW_WIDTH,
-    height: WINDOW_HEIGHT,
+    width: PET_WINDOW_WIDTH,
+    height: PET_WINDOW_HEIGHT,
     x: position.x,
     y: position.y,
     show: false,
@@ -344,21 +410,83 @@ function createPetWindow(ctx) {
   win.setAlwaysOnTop(true, 'screen-saver');
   win.on('move', handlePetWindowMove);
   win.webContents.on('did-finish-load', () => {
-    runtime.rendererReady = true;
-    publishStatus(runtime.latestStatus);
+    if (runtime.petWindow !== win) return;
+    runtime.petRendererReady = true;
+    sendToWindow(win, STATUS_CHANNEL, runtime.latestStatus);
   });
   win.once('ready-to-show', () => {
-    if (!win.isDestroyed()) {
+    if (runtime.petWindow === win && !win.isDestroyed()) {
+      win.showInactive();
+      win.moveTop();
+      syncBubbleWindowPosition();
+    }
+  });
+  win.on('closed', () => {
+    if (runtime.petWindow !== win) return;
+    runtime.dragState = null;
+    runtime.petRendererReady = false;
+    runtime.petWindow = null;
+    const bubbleWindow = runtime.bubbleWindow;
+    if (bubbleWindow && !bubbleWindow.isDestroyed()) {
+      bubbleWindow.close();
+    }
+  });
+  void win.loadFile(path.join(__dirname, 'pet.html'));
+  return win;
+}
+
+/** 创建不受桌宠尺寸约束的独立状态气泡窗口。 */
+function createBubbleWindow(ctx) {
+  const position = getBubbleWindowPosition();
+  if (!position) throw new Error('无法确定桌宠状态气泡的位置');
+
+  const win = ctx.createWindow({
+    width: BUBBLE_WINDOW_WIDTH,
+    height: BUBBLE_WINDOW_HEIGHT,
+    x: position.x,
+    y: position.y,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    focusable: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    hasShadow: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+    },
+  });
+
+  win.setMenuBarVisibility(false);
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.setIgnoreMouseEvents(true);
+  win.webContents.on('did-finish-load', () => {
+    if (runtime.bubbleWindow !== win) return;
+    runtime.bubbleRendererReady = true;
+    sendToWindow(win, STATUS_CHANNEL, runtime.latestStatus);
+  });
+  win.once('ready-to-show', () => {
+    if (runtime.bubbleWindow === win && !win.isDestroyed()) {
+      syncBubbleWindowPosition();
       win.showInactive();
       win.moveTop();
     }
   });
   win.on('closed', () => {
-    runtime.dragState = null;
-    runtime.rendererReady = false;
-    if (runtime.petWindow === win) runtime.petWindow = null;
+    if (runtime.bubbleWindow !== win) return;
+    runtime.bubbleRendererReady = false;
+    runtime.bubbleWindow = null;
   });
-  void win.loadFile(path.join(__dirname, 'pet.html'));
+  void win.loadFile(path.join(__dirname, 'bubble.html'));
   return win;
 }
 
@@ -386,10 +514,15 @@ function cleanupRuntime() {
   }
   runtime.hostWindow = null;
 
-  const win = runtime.petWindow;
+  const bubbleWindow = runtime.bubbleWindow;
+  runtime.bubbleWindow = null;
+  runtime.bubbleRendererReady = false;
+  if (bubbleWindow && !bubbleWindow.isDestroyed()) bubbleWindow.close();
+
+  const petWindow = runtime.petWindow;
   runtime.petWindow = null;
-  runtime.rendererReady = false;
-  if (win && !win.isDestroyed()) win.close();
+  runtime.petRendererReady = false;
+  if (petWindow && !petWindow.isDestroyed()) petWindow.close();
 
   runtime.ctx = null;
   runtime.latestStatus = createIdleStatus();
@@ -408,6 +541,7 @@ module.exports = {
     runtime.latestStatus = createIdleStatus();
     runtime.hostWindow = findHostWindow();
     runtime.petWindow = createPetWindow(ctx);
+    runtime.bubbleWindow = createBubbleWindow(ctx);
 
     registerDragIpc();
     if (runtime.hostWindow) {

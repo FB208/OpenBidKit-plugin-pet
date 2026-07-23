@@ -5,6 +5,7 @@
 ## 功能
 
 - 透明、置顶、可拖动的动画桌宠
+- 任务状态使用独立宽气泡展示，不受角色窗口宽度约束，并自动跟随角色位置
 - 待命状态使用 24 张真实帧，其余状态使用 16 张真实帧，不使用透明叠帧
 - 统一角色体量、视觉中心和脚底基线
 - 启动问候动画保持独立，待命时每 5 秒自然眨眼一次
@@ -45,12 +46,12 @@
 npm run package
 ```
 
-打包结果位于 `dist/openbidkit-pet-v0.5.1.zip`。
+打包结果位于 `dist/openbidkit-pet-v0.6.2.zip`。
 
 也可以指定要写入发布包清单的版本：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\package.ps1 -Version 0.5.1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\package.ps1 -Version 0.6.2
 ```
 
 ## 发布新版本
