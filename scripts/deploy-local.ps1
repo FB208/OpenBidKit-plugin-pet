@@ -27,7 +27,8 @@ $runtimeFiles = @(
   "pet.html",
   "pet.css",
   "pet.js",
-  "assets\icon.png"
+  "assets\icon.png",
+  "assets\pet-spritesheet.webp"
 )
 
 New-Item -ItemType Directory -Path $pluginsRoot -Force | Out-Null

@@ -3,10 +3,12 @@ const { BrowserWindow, screen } = require('electron');
 
 const PLUGIN_ID = 'openbidkit-pet';
 const STATUS_CHANNEL = `plugin:${PLUGIN_ID}:status`;
+const MOTION_CHANNEL = `plugin:${PLUGIN_ID}:motion`;
 const WINDOW_WIDTH = 180;
 const WINDOW_HEIGHT = 212;
 const WINDOW_MARGIN = 24;
 const POSITION_SAVE_DELAY_MS = 200;
+const MOVE_IDLE_DELAY_MS = 140;
 
 const TASK_LABELS = Object.freeze({
   'bid-section-extraction': '多标段识别',
@@ -32,6 +34,8 @@ const runtime = {
   unsubscribeTask: null,
   terminalTimer: null,
   positionTimer: null,
+  movementTimer: null,
+  lastWindowX: null,
   rendererReady: false,
   latestStatus: createIdleStatus(),
 };
@@ -115,6 +119,15 @@ function publishStatus(status) {
   win.webContents.send(STATUS_CHANNEL, status);
 }
 
+/** 向渲染页发送窗口拖动方向。 */
+function publishMotion(motion) {
+  const win = runtime.petWindow;
+  if (!runtime.rendererReady || !win || win.isDestroyed() || win.webContents.isDestroyed()) {
+    return;
+  }
+  win.webContents.send(MOTION_CHANNEL, motion);
+}
+
 /** 显示当前活动任务；没有任务时显示空闲。 */
 function publishLatestActiveOrIdle(excludedTaskId = null) {
   const activeTask = getLatestActiveTask(excludedTaskId);
@@ -188,6 +201,29 @@ function schedulePositionSave() {
   }, POSITION_SAVE_DELAY_MS);
 }
 
+/** 记录拖动方向，并在停止移动后恢复任务状态动画。 */
+function handlePetWindowMove() {
+  schedulePositionSave();
+
+  const win = runtime.petWindow;
+  if (!win || win.isDestroyed()) return;
+  const [x] = win.getPosition();
+  const previousX = runtime.lastWindowX;
+  runtime.lastWindowX = x;
+  if (!Number.isFinite(previousX) || x === previousX) return;
+
+  publishMotion({
+    active: true,
+    direction: x < previousX ? 'left' : 'right',
+  });
+
+  if (runtime.movementTimer) clearTimeout(runtime.movementTimer);
+  runtime.movementTimer = setTimeout(() => {
+    runtime.movementTimer = null;
+    publishMotion({ active: false, direction: null });
+  }, MOVE_IDLE_DELAY_MS);
+}
+
 /** 找到承载插件管理页面的主程序窗口。 */
 function findHostWindow() {
   const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -201,6 +237,7 @@ function findHostWindow() {
 /** 创建桌宠透明悬浮窗口。 */
 function createPetWindow(ctx) {
   const position = getInitialPosition(ctx);
+  runtime.lastWindowX = position.x;
   const win = ctx.createWindow({
     width: WINDOW_WIDTH,
     height: WINDOW_HEIGHT,
@@ -227,7 +264,7 @@ function createPetWindow(ctx) {
   });
 
   win.setMenuBarVisibility(false);
-  win.on('move', schedulePositionSave);
+  win.on('move', handlePetWindowMove);
   win.webContents.on('did-finish-load', () => {
     runtime.rendererReady = true;
     publishStatus(runtime.latestStatus);
@@ -251,6 +288,11 @@ function cleanupRuntime() {
     clearTimeout(runtime.positionTimer);
     runtime.positionTimer = null;
   }
+  if (runtime.movementTimer) {
+    clearTimeout(runtime.movementTimer);
+    runtime.movementTimer = null;
+  }
+  runtime.lastWindowX = null;
   if (runtime.unsubscribeTask) {
     runtime.unsubscribeTask();
     runtime.unsubscribeTask = null;

@@ -43,16 +43,16 @@ $packageFiles = @(
   "pet.html",
   "pet.css",
   "pet.js",
-  "assets\icon.png"
+  "assets\icon.png",
+  "assets\pet-spritesheet.webp"
 )
 
 try {
   New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
 
   # 发布包中的版本和下载地址以本次 Tag 为准，不修改仓库工作区。
-  $stageManifestPath = Join-Path $stageRoot "manifest.json"
   $manifestJson = $manifest | ConvertTo-Json -Depth 10
-  [System.IO.File]::WriteAllText($stageManifestPath, $manifestJson + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
+  [System.IO.File]::WriteAllText((Join-Path -Path $stageRoot -ChildPath "manifest.json"), $manifestJson + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
 
   foreach ($relativePath in $packageFiles) {
     $sourcePath = Join-Path $projectRoot $relativePath
