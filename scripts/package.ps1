@@ -1,5 +1,6 @@
 param(
-  [string]$OutputDirectory = ""
+  [string]$OutputDirectory = "",
+  [string]$Version = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,17 +11,32 @@ $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $manifestPath = Join-Path $projectRoot "manifest.json"
 $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
+if ([string]::IsNullOrWhiteSpace($Version)) {
+  $Version = [string]$manifest.version
+}
+
+if ($Version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+  throw "Version must use semantic version format X.Y.Z: $Version"
+}
+
+if ([string]::IsNullOrWhiteSpace([string]$manifest.repository)) {
+  throw "manifest.json is missing repository"
+}
+
+$repository = ([string]$manifest.repository).TrimEnd("/")
+$manifest.version = $Version
+$manifest.releaseUrl = "{0}/releases/download/v{1}/{2}-v{1}.zip" -f $repository, $Version, $manifest.id
+
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
   $OutputDirectory = Join-Path $projectRoot "dist"
 }
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 
-$archiveName = "{0}-v{1}.zip" -f $manifest.id, $manifest.version
+$archiveName = "{0}-v{1}.zip" -f $manifest.id, $Version
 $archivePath = Join-Path $OutputDirectory $archiveName
 $stageRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("openbidkit-pet-package-" + [Guid]::NewGuid().ToString("N"))
 $packageFiles = @(
-  "manifest.json",
   "package.json",
   "main.cjs",
   "preload.cjs",
@@ -32,6 +48,11 @@ $packageFiles = @(
 
 try {
   New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
+
+  # 发布包中的版本和下载地址以本次 Tag 为准，不修改仓库工作区。
+  $stageManifestPath = Join-Path $stageRoot "manifest.json"
+  $manifestJson = $manifest | ConvertTo-Json -Depth 10
+  [System.IO.File]::WriteAllText($stageManifestPath, $manifestJson + [Environment]::NewLine, [System.Text.UTF8Encoding]::new($false))
 
   foreach ($relativePath in $packageFiles) {
     $sourcePath = Join-Path $projectRoot $relativePath

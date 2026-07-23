@@ -6,6 +6,11 @@
   "author": "FB208",
   "repository": "https://github.com/FB208/OpenBidKit-plugin-pet",
   "releaseUrl": "https://github.com/FB208/OpenBidKit-plugin-pet/releases/download/v0.1.0/openbidkit-pet-v0.1.0.zip",
+  "tags": [
+    "桌宠",
+    "悬浮窗",
+    "任务状态"
+  ],
   "permissions": [
     "task:read",
     "task:subscribe",
