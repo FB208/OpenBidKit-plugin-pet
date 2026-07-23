@@ -1,0 +1,29 @@
+{
+  "columns": 8,
+  "rows": 18,
+  "cellWidth": 192,
+  "cellHeight": 208,
+  "framesPerState": 16,
+  "stateOrder": [
+    "idle",
+    "running-right",
+    "running-left",
+    "waving",
+    "jumping",
+    "failed",
+    "waiting",
+    "running",
+    "review"
+  ],
+  "frameDurationsMs": {
+    "idle": 100,
+    "running-right": 60,
+    "running-left": 60,
+    "waving": 70,
+    "jumping": 65,
+    "failed": 90,
+    "waiting": 80,
+    "running": 60,
+    "review": 80
+  }
+}

@@ -1,22 +1,18 @@
-const primaryFrameElement = document.getElementById('petFramePrimary');
-const secondaryFrameElement = document.getElementById('petFrameSecondary');
+const spriteElement = document.getElementById('petSprite');
 const statusElement = document.getElementById('status');
 const statusTextElement = document.getElementById('statusText');
 
 const ANIMATIONS = Object.freeze({
-  idle: { row: 0, frames: 6, keyframeMs: 240 },
-  'running-right': { row: 1, frames: 8, keyframeMs: 105 },
-  'running-left': { row: 2, frames: 8, keyframeMs: 105 },
-  waving: { row: 3, frames: 4, keyframeMs: 190 },
-  jumping: { row: 4, frames: 5, keyframeMs: 145 },
-  failed: { row: 5, frames: 8, keyframeMs: 210 },
-  waiting: { row: 6, frames: 6, keyframeMs: 240 },
-  running: { row: 7, frames: 6, keyframeMs: 135 },
-  review: { row: 8, frames: 6, keyframeMs: 210 },
+  idle: { startRow: 0, frames: 16, keyframeMs: 100 },
+  'running-right': { startRow: 2, frames: 16, keyframeMs: 60 },
+  'running-left': { startRow: 4, frames: 16, keyframeMs: 60 },
+  waving: { startRow: 6, frames: 16, keyframeMs: 70 },
+  jumping: { startRow: 8, frames: 16, keyframeMs: 65 },
+  failed: { startRow: 10, frames: 16, keyframeMs: 90 },
+  waiting: { startRow: 12, frames: 16, keyframeMs: 80 },
+  running: { startRow: 14, frames: 16, keyframeMs: 60 },
+  review: { startRow: 16, frames: 16, keyframeMs: 80 },
 });
-
-const BLEND_START = 0.12;
-const BLEND_END = 0.88;
 
 let animationFrameRequest = null;
 let animationRunId = 0;
@@ -25,28 +21,13 @@ let currentTone = null;
 let movementActive = false;
 let greeted = false;
 
-/** 将指定图层定位到精灵图中的对应单元格。 */
-function positionFrame(element, animation, frameIndex) {
-  const x = (frameIndex * 100) / 7;
-  const y = (animation.row * 100) / 8;
-  element.style.backgroundPosition = `${x}% ${y}%`;
-}
-
-/** 使用平滑曲线计算相邻关键帧的融合进度。 */
-function calculateBlend(progress) {
-  const normalized = Math.max(
-    0,
-    Math.min(1, (progress - BLEND_START) / (BLEND_END - BLEND_START)),
-  );
-  return normalized * normalized * (3 - (2 * normalized));
-}
-
-/** 通过双图层融合渲染关键帧之间的亚帧画面。 */
-function renderInterpolatedFrame(animation, frameIndex, nextFrameIndex, blend) {
-  positionFrame(primaryFrameElement, animation, frameIndex);
-  positionFrame(secondaryFrameElement, animation, nextFrameIndex);
-  primaryFrameElement.style.opacity = String(1 - blend);
-  secondaryFrameElement.style.opacity = String(blend);
+/** 将指定动画帧定位到精灵图中的对应单元格。 */
+function renderFrame(animation, frameIndex) {
+  const column = frameIndex % 8;
+  const row = animation.startRow + Math.floor(frameIndex / 8);
+  const x = (column * 100) / 7;
+  const y = (row * 100) / 17;
+  spriteElement.style.backgroundPosition = `${x}% ${y}%`;
 }
 
 /** 停止当前动画帧调度。 */
@@ -58,7 +39,7 @@ function stopAnimation() {
   }
 }
 
-/** 播放循环动画或只播放一次的状态动画。 */
+/** 按时间轴播放真实帧，不混合相邻姿态。 */
 function playAnimation(name, options = {}) {
   const animation = ANIMATIONS[name];
   if (!animation) return;
@@ -70,17 +51,16 @@ function playAnimation(name, options = {}) {
   const once = Boolean(options.once);
   const totalDuration = animation.frames * animation.keyframeMs;
   let startedAt = null;
+  let renderedFrame = -1;
 
-  renderInterpolatedFrame(animation, 0, animation.frames > 1 ? 1 : 0, 0);
-
-  /** 按屏幕刷新率推进亚帧融合，保持原动作总时长不变。 */
+  /** 根据屏幕刷新时间选择当前真实帧。 */
   function animate(timestamp) {
     if (runId !== animationRunId) return;
     if (startedAt === null) startedAt = timestamp;
 
     const elapsed = timestamp - startedAt;
     if (once && elapsed >= totalDuration) {
-      renderInterpolatedFrame(animation, animation.frames - 1, animation.frames - 1, 0);
+      renderFrame(animation, animation.frames - 1);
       animationFrameRequest = null;
       options.onComplete?.();
       return;
@@ -91,13 +71,10 @@ function playAnimation(name, options = {}) {
       animation.frames - 1,
       Math.floor(cycleElapsed / animation.keyframeMs),
     );
-    const nextFrameIndex = once
-      ? Math.min(frameIndex + 1, animation.frames - 1)
-      : (frameIndex + 1) % animation.frames;
-    const frameProgress = (cycleElapsed % animation.keyframeMs) / animation.keyframeMs;
-    const blend = nextFrameIndex === frameIndex ? 0 : calculateBlend(frameProgress);
-
-    renderInterpolatedFrame(animation, frameIndex, nextFrameIndex, blend);
+    if (frameIndex !== renderedFrame) {
+      renderedFrame = frameIndex;
+      renderFrame(animation, frameIndex);
+    }
     animationFrameRequest = requestAnimationFrame(animate);
   }
 

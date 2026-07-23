@@ -1,0 +1,565 @@
+{
+    "schema_version":  1,
+    "pet_id":  "xiaoyi-hd",
+    "final_columns":  8,
+    "rows":  18,
+    "cell_width":  192,
+    "cell_height":  208,
+    "chroma_key":  "#FFFF00",
+    "jobs":  [
+                 {
+                     "id":  "idle-a",
+                     "state":  "idle",
+                     "phase":  "a",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/idle-a.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-idle.png",
+                                              "role":  "old motion semantics reference only; ignore its scale inconsistencies"
+                                          }
+                                      ],
+                     "output_path":  "decoded/idle-a.png",
+                     "depends_on":  {
+
+                                    },
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8df7-41c8-7fb2-8d5b-71a55b270433\\exec-fdc74a36-e809-4d93-ad3a-4c4a4efbad96.png",
+                     "completed_at":  "2026-07-23T08:00:12.9465708Z",
+                     "qa_note":  "8个完整分离姿态、身份与基线稳定；背景存在轻微黄色色差，后续抠图阶段重点检查。"
+                 },
+                 {
+                     "id":  "idle-b",
+                     "state":  "idle",
+                     "phase":  "b",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/idle-b.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-idle.png",
+                                              "role":  "old motion semantics reference only; ignore its scale inconsistencies"
+                                          },
+                                          {
+                                              "path":  "decoded/idle-a.png",
+                                              "role":  "generated phase-A continuity reference"
+                                          }
+                                      ],
+                     "output_path":  "decoded/idle-b.png",
+                     "depends_on":  "idle-a",
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8dfd-b30a-7000-b55e-2625f707e0d5\\exec-ab276d3a-788b-446b-8588-6aed43662b1d.png",
+                     "completed_at":  "2026-07-23T08:04:08.9929830Z",
+                     "qa_note":  "8个完整分离帧，尺寸与足部基线稳定，首尾可衔接，无参考线或阴影。"
+                 },
+                 {
+                     "id":  "running-right-a",
+                     "state":  "running-right",
+                     "phase":  "a",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/running-right-a.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-running-right.png",
+                                              "role":  "old motion semantics reference only; ignore its scale inconsistencies"
+                                          }
+                                      ],
+                     "output_path":  "decoded/running-right-a.png",
+                     "depends_on":  {
+
+                                    },
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8df7-ae80-7bb2-af0a-3a513b284d1c\\exec-6b5790ba-e49c-4d55-b59f-a930adc36b27.png",
+                     "completed_at":  "2026-07-23T07:59:11.6952602Z",
+                     "qa_note":  "8个完整分离姿态、身份一致且朝右，纯黄背景、间距和裁切正常。"
+                 },
+                 {
+                     "id":  "running-right-b",
+                     "state":  "running-right",
+                     "phase":  "b",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/running-right-b.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-running-right.png",
+                                              "role":  "old motion semantics reference only; ignore its scale inconsistencies"
+                                          },
+                                          {
+                                              "path":  "decoded/running-right-a.png",
+                                              "role":  "generated phase-A continuity reference"
+                                          }
+                                      ],
+                     "output_path":  "decoded/running-right-b.png",
+                     "depends_on":  "running-right-a",
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8dfc-eee3-76a3-aeb1-d8d50406100c\\exec-aeff3a7a-dd30-48de-9c5c-ed49bd22c853.png",
+                     "completed_at":  "2026-07-23T08:02:23.4382800Z",
+                     "qa_note":  "8个完整朝右跑步姿态，尺度与基线一致，无参考线、速度线或尘土。"
+                 },
+                 {
+                     "id":  "waving-a",
+                     "state":  "waving",
+                     "phase":  "a",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/waving-a.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-waving.png",
+                                              "role":  "old motion semantics reference only; ignore its scale inconsistencies"
+                                          }
+                                      ],
+                     "output_path":  "decoded/waving-a.png",
+                     "depends_on":  {
+
+                                    },
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8e01-e053-7373-a727-7ae054c567b9\\exec-2cbc9e97-cf03-48e8-b1f1-deab31629159.png",
+                     "completed_at":  "2026-07-23T08:09:19.6874557Z",
+                     "qa_note":  "8个完整分离姿态，尺度、基线及单臂抬手稳定，无裁切或附加特效。"
+                 },
+                 {
+                     "id":  "waving-b",
+                     "state":  "waving",
+                     "phase":  "b",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/waving-b.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-waving.png",
+                                              "role":  "old motion semantics reference only; ignore its scale inconsistencies"
+                                          },
+                                          {
+                                              "path":  "decoded/waving-a.png",
+                                              "role":  "generated phase-A continuity reference"
+                                          }
+                                      ],
+                     "output_path":  "decoded/waving-b.png",
+                     "depends_on":  "waving-a",
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8e06-a3fe-7690-8224-cb3a5d8d9a56\\exec-03be2d9a-142b-4269-bec4-1367c4cb0da3.png",
+                     "completed_at":  "2026-07-23T08:12:31.7955808Z",
+                     "qa_note":  "8帧延续抬手并落回中立，尺度、脚底基线和纯黄背景一致。"
+                 },
+                 {
+                     "id":  "jumping-a",
+                     "state":  "jumping",
+                     "phase":  "a",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/jumping-a.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-jumping.png",
+                                              "role":  "old motion semantics reference only; ignore its scale inconsistencies"
+                                          }
+                                      ],
+                     "output_path":  "decoded/jumping-a.png",
+                     "depends_on":  {
+
+                                    },
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8e02-0f12-7522-be45-9aaa2109b855\\exec-57a01cd1-bcd1-4470-9595-4e9cdb67e6a2.png",
+                     "completed_at":  "2026-07-23T08:07:30.9930203Z",
+                     "qa_note":  "8个完整分离姿态，连续呈现站立蓄力到腾空最高点。"
+                 },
+                 {
+                     "id":  "jumping-b",
+                     "state":  "jumping",
+                     "phase":  "b",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/jumping-b.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-jumping.png",
+                                              "role":  "old motion semantics reference only; ignore its scale inconsistencies"
+                                          },
+                                          {
+                                              "path":  "decoded/jumping-a.png",
+                                              "role":  "generated phase-A continuity reference"
+                                          }
+                                      ],
+                     "output_path":  "decoded/jumping-b.png",
+                     "depends_on":  "jumping-a",
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8e05-5853-7be2-8825-1288c726ea0a\\exec-c5836d6d-d51b-4d14-81b7-cb46a895f9ec.png",
+                     "completed_at":  "2026-07-23T08:12:20.1284774Z",
+                     "qa_note":  "8帧从最高点下降、落地缓冲并站立，首尾可衔接。"
+                 },
+                 {
+                     "id":  "failed-a",
+                     "state":  "failed",
+                     "phase":  "a",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/failed-a.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-failed.png",
+                                              "role":  "old motion semantics reference only; ignore its scale inconsistencies"
+                                          }
+                                      ],
+                     "output_path":  "decoded/failed-a.png",
+                     "depends_on":  {
+
+                                    },
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8e09-eded-7c33-b9e7-47afab494609\\exec-5912a997-2f18-46b1-bc5b-76a2c674c771.png",
+                     "completed_at":  "2026-07-23T08:16:55.0224815Z",
+                     "qa_note":  "8帧逐步低落的悲伤姿态，保持纯黄背景。"
+                 },
+                 {
+                     "id":  "failed-b",
+                     "state":  "failed",
+                     "phase":  "b",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/failed-b.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-failed.png",
+                                              "role":  "old motion semantics reference only; ignore its scale inconsistencies"
+                                          },
+                                          {
+                                              "path":  "decoded/failed-a.png",
+                                              "role":  "generated phase-A continuity reference"
+                                          }
+                                      ],
+                     "output_path":  "decoded/failed-b.png",
+                     "depends_on":  "failed-a",
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8e11-d821-7603-9faa-1d7e480b6f08\\exec-22b4b022-eee6-49b0-8214-f9cd3e8a3a19.png",
+                     "completed_at":  "2026-07-23T08:26:22.4963975Z",
+                     "qa_note":  "修复版：8帧从深度低落至轻度悲伤站立，恢复高度均匀渐进。",
+                     "repair_reason":  "原结果完整周期9→10帧从深度低落突然回到站立，重做后半段。"
+                 },
+                 {
+                     "id":  "waiting-a",
+                     "state":  "waiting",
+                     "phase":  "a",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/waiting-a.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-waiting.png",
+                                              "role":  "old motion semantics reference only; ignore its scale inconsistencies"
+                                          }
+                                      ],
+                     "output_path":  "decoded/waiting-a.png",
+                     "depends_on":  {
+
+                                    },
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8e0a-34ac-7d80-9730-7c8fb59f90de\\exec-8864a2e2-ff5f-497c-bfc7-51f1c9196c7f.png",
+                     "completed_at":  "2026-07-23T08:16:28.9160675Z",
+                     "qa_note":  "8帧完整等待抬手询问动作，身份、尺度、基线和纯黄背景稳定。"
+                 },
+                 {
+                     "id":  "waiting-b",
+                     "state":  "waiting",
+                     "phase":  "b",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/waiting-b.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-waiting.png",
+                                              "role":  "old motion semantics reference only; ignore its scale inconsistencies"
+                                          },
+                                          {
+                                              "path":  "decoded/waiting-a.png",
+                                              "role":  "generated phase-A continuity reference"
+                                          }
+                                      ],
+                     "output_path":  "decoded/waiting-b.png",
+                     "depends_on":  "waiting-a",
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8e0c-4863-7fc3-8370-0e834a386251\\exec-5ca31293-cbda-4d21-b5f9-8af3533cce96.png",
+                     "completed_at":  "2026-07-23T08:20:19.4404577Z",
+                     "qa_note":  "8帧从抬手自然落至中立，脚底基线与镜头稳定，首尾可衔接。"
+                 },
+                 {
+                     "id":  "running-a",
+                     "state":  "running",
+                     "phase":  "a",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/running-a.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-running.png",
+                                              "role":  "old motion semantics reference only; ignore its scale inconsistencies"
+                                          }
+                                      ],
+                     "output_path":  "decoded/running-a.png",
+                     "depends_on":  {
+
+                                    },
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8e12-1a88-71c1-bdfe-7a0aeea025e2\\exec-fd62d0d9-3613-45d4-808b-e55ee97ed461.png",
+                     "completed_at":  "2026-07-23T08:25:57.9081825Z",
+                     "qa_note":  "8帧专注任务处理循环，身份与纯黄背景符合要求。"
+                 },
+                 {
+                     "id":  "running-b",
+                     "state":  "running",
+                     "phase":  "b",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/repair-running-b.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-running.png",
+                                              "role":  "old motion semantics reference only; ignore its scale inconsistencies"
+                                          },
+                                          {
+                                              "path":  "decoded/running-a.png",
+                                              "role":  "generated phase-A continuity reference"
+                                          }
+                                      ],
+                     "output_path":  "decoded/running-b.png",
+                     "depends_on":  "running-a",
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8e39-94cc-72e3-be4a-f0394e186cc1\\call_bhVGCZhczTtLw93EfAC5KBAu.png",
+                     "completed_at":  "2026-07-23T09:18:55.4907282Z",
+                     "qa_note":  "最终修复版：8帧从腹前渐进外展，再经两级回收与下移回到自然垂臂；体型、中心、脚底线稳定。",
+                     "repair_reason":  "前两版后半段仍存在宽展姿态直接垂臂；最终版补足回程桥接姿态。"
+                 },
+                 {
+                     "id":  "review-a",
+                     "state":  "review",
+                     "phase":  "a",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/review-a.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-review.png",
+                                              "role":  "old motion semantics reference only; ignore its scale inconsistencies"
+                                          }
+                                      ],
+                     "output_path":  "decoded/review-a.png",
+                     "depends_on":  {
+
+                                    },
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8e16-bd3e-7da3-b3df-95247e9470f0\\exec-761fdcb7-b6d7-442d-8b80-f9a65126979f.png",
+                     "completed_at":  "2026-07-23T08:30:00.5797583Z",
+                     "qa_note":  "8帧审阅动作，角色身份、纯黄背景与构图稳定。"
+                 },
+                 {
+                     "id":  "review-b",
+                     "state":  "review",
+                     "phase":  "b",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/repair-review-b.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-review.png",
+                                              "role":  "old motion semantics reference only; ignore its scale inconsistencies"
+                                          },
+                                          {
+                                              "path":  "decoded/review-a.png",
+                                              "role":  "generated phase-A continuity reference"
+                                          }
+                                      ],
+                     "output_path":  "decoded/review-b.png",
+                     "depends_on":  "review-a",
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8e2c-33df-7bc1-acf9-c5a5fb4c770e\\call_rBssrQp1TMUEcVcOouAcyoQI.png",
+                     "completed_at":  "2026-07-23T09:18:55.4947252Z",
+                     "qa_note":  "最终修复版：手臂、头部与眉眼分8帧连续回到中立，末段和循环首尾无瞬切。",
+                     "repair_reason":  "原后半段第13→14帧手臂与头部同时瞬切回站立。"
+                 }
+             ],
+    "derived_state":  {
+                          "state":  "running-left",
+                          "source":  "running-right",
+                          "method":  "framewise-horizontal-mirror-preserving-order",
+                          "reason":  "小易造型与腹部标记左右对称，逐帧镜像可保证两侧步态尺寸完全一致"
+                      },
+    "frames_per_state":  16
+}

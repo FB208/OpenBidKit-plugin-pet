@@ -5,7 +5,8 @@
 ## 功能
 
 - 透明、置顶、可拖动的动画桌宠
-- 关键帧间按屏幕刷新率平滑补间
+- 每个状态使用 16 张真实帧，不使用透明叠帧
+- 统一角色体量、视觉中心和脚底基线
 - 实时显示易标当前任务状态
 - 记住上次窗口位置
 - 禁用插件或关闭主程序时自动清理窗口和订阅
@@ -16,12 +17,12 @@
 npm run package
 ```
 
-打包结果位于 `dist/openbidkit-pet-v0.2.0.zip`。
+打包结果位于 `dist/openbidkit-pet-v0.3.0.zip`。
 
 也可以指定要写入发布包清单的版本：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\package.ps1 -Version 0.2.0
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\package.ps1 -Version 0.3.0
 ```
 
 ## 发布新版本

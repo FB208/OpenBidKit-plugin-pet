@@ -33,26 +33,18 @@ body {
 }
 
 .pet__sprite {
-  position: relative;
   display: block;
-  width: 160px;
-  aspect-ratio: 192 / 208;
+  /* 192×208 按 13/16 整数缩放，避免跨图集行时产生亚像素闪动。 */
+  width: 156px;
+  height: 169px;
   flex: 0 0 auto;
-  overflow: hidden;
-  pointer-events: none;
-  filter: drop-shadow(0 8px 14px rgb(15 23 42 / 18%));
-}
-
-.pet__sprite-layer {
-  position: absolute;
-  inset: 0;
-  display: block;
   background-image: url("assets/pet-spritesheet.webp");
   background-repeat: no-repeat;
   background-position: 0 0;
-  background-size: 800% 900%;
+  background-size: 800% 1800%;
   pointer-events: none;
-  will-change: background-position, opacity;
+  filter: drop-shadow(0 8px 14px rgb(15 23 42 / 18%));
+  will-change: background-position;
 }
 
 .pet__status {
