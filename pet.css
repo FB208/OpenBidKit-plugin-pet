@@ -17,9 +17,6 @@ body {
   user-select: none;
 }
 
-body {
-  -webkit-app-region: drag;
-}
 
 .pet {
   display: flex;
@@ -28,25 +25,31 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  gap: 6px;
-  padding: 4px 10px;
+  gap: 5px;
+  padding: 4px 0;
 }
 
 .pet__sprite {
   display: block;
-  /* 192×208 按 13/16 整数缩放，避免跨图集行时产生亚像素闪动。 */
-  width: 156px;
-  height: 169px;
+  /* 192×208 按 11/16 整数缩放，缩小角色并避免亚像素闪动。 */
+  width: 132px;
+  height: 143px;
   flex: 0 0 auto;
   background-image: url("assets/pet-spritesheet.webp");
   background-repeat: no-repeat;
   background-position: 0 0;
-  background-size: 800% 1800%;
-  pointer-events: none;
+  background-size: 800% 1900%;
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
   filter: drop-shadow(0 8px 14px rgb(15 23 42 / 18%));
   will-change: background-position;
 }
 
+
+.pet__sprite[data-dragging="true"] {
+  cursor: grabbing;
+}
 .pet__status {
   display: flex;
   width: 160px;

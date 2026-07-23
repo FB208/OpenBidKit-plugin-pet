@@ -1,20 +1,20 @@
 {
-  "id": "openbidkit-pet",
-  "name": "易标桌宠",
-  "version": "0.3.0",
-  "description": "在桌面悬浮显示易标图标，并实时展示当前任务状态。",
-  "author": "FB208",
-  "repository": "https://github.com/FB208/OpenBidKit-plugin-pet",
-  "releaseUrl": "https://github.com/FB208/OpenBidKit-plugin-pet/releases/download/v0.3.0/openbidkit-pet-v0.3.0.zip",
-  "tags": [
-    "桌宠",
-    "悬浮窗",
-    "任务状态"
-  ],
-  "permissions": [
-    "task:read",
-    "task:subscribe",
-    "window:create"
-  ],
-  "hasConfig": false
+    "id":  "openbidkit-pet",
+    "name":  "易标桌宠",
+    "version":  "0.5.1",
+    "description":  "在桌面悬浮显示易标图标，并实时展示当前任务状态。",
+    "author":  "FB208",
+    "repository":  "https://github.com/FB208/OpenBidKit-plugin-pet",
+    "releaseUrl":  "https://github.com/FB208/OpenBidKit-plugin-pet/releases/download/v0.5.1/openbidkit-pet-v0.5.1.zip",
+    "tags":  [
+                 "桌宠",
+                 "悬浮窗",
+                 "任务状态"
+             ],
+    "permissions":  [
+                        "task:read",
+                        "task:subscribe",
+                        "window:create"
+                    ],
+    "hasConfig":  false
 }

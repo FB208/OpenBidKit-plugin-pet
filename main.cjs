@@ -1,11 +1,14 @@
 const path = require('path');
-const { BrowserWindow, screen } = require('electron');
+const { BrowserWindow, ipcMain, screen } = require('electron');
 
 const PLUGIN_ID = 'openbidkit-pet';
 const STATUS_CHANNEL = `plugin:${PLUGIN_ID}:status`;
 const MOTION_CHANNEL = `plugin:${PLUGIN_ID}:motion`;
-const WINDOW_WIDTH = 180;
-const WINDOW_HEIGHT = 212;
+const DRAG_START_CHANNEL = `plugin:${PLUGIN_ID}:drag-start`;
+const DRAG_MOVE_CHANNEL = `plugin:${PLUGIN_ID}:drag-move`;
+const DRAG_END_CHANNEL = `plugin:${PLUGIN_ID}:drag-end`;
+const WINDOW_WIDTH = 160;
+const WINDOW_HEIGHT = 180;
 const WINDOW_MARGIN = 24;
 const POSITION_SAVE_DELAY_MS = 200;
 const MOVE_IDLE_DELAY_MS = 140;
@@ -36,6 +39,8 @@ const runtime = {
   positionTimer: null,
   movementTimer: null,
   lastWindowX: null,
+  dragState: null,
+  dragIpcRegistered: false,
   rendererReady: false,
   latestStatus: createIdleStatus(),
 };
@@ -224,6 +229,78 @@ function handlePetWindowMove() {
   }, MOVE_IDLE_DELAY_MS);
 }
 
+
+/** 判断 IPC 是否来自当前桌宠窗口。 */
+function isPetWindowSender(event) {
+  const win = runtime.petWindow;
+  return Boolean(
+    win
+    && !win.isDestroyed()
+    && !win.webContents.isDestroyed()
+    && event.sender === win.webContents
+  );
+}
+
+/** 将渲染进程传入的坐标转换为可用数字。 */
+function getPointerCoordinate(value) {
+  const coordinate = Number(value);
+  return Number.isFinite(coordinate) ? coordinate : null;
+}
+
+/** 记录指针在桌宠窗口内的按下位置，供后续移动保持抓取点不变。 */
+function handleDragStart(event, point) {
+  if (!isPetWindowSender(event)) return;
+
+  const pointerWindowX = getPointerCoordinate(point?.pointerWindowX);
+  const pointerWindowY = getPointerCoordinate(point?.pointerWindowY);
+  if (pointerWindowX === null || pointerWindowY === null) return;
+
+  runtime.dragState = {
+    pointerWindowX,
+    pointerWindowY,
+  };
+}
+
+/** 根据屏幕指针坐标移动桌宠窗口。 */
+function handleDragMove(event, point) {
+  if (!isPetWindowSender(event) || !runtime.dragState) return;
+
+  const pointerScreenX = getPointerCoordinate(point?.pointerScreenX);
+  const pointerScreenY = getPointerCoordinate(point?.pointerScreenY);
+  if (pointerScreenX === null || pointerScreenY === null) return;
+
+  const win = runtime.petWindow;
+  if (!win || win.isDestroyed()) return;
+
+  win.setPosition(
+    Math.round(pointerScreenX - runtime.dragState.pointerWindowX),
+    Math.round(pointerScreenY - runtime.dragState.pointerWindowY),
+  );
+}
+
+/** 结束当前指针拖拽。 */
+function handleDragEnd(event) {
+  if (!isPetWindowSender(event)) return;
+  runtime.dragState = null;
+}
+
+/** 注册桌宠指针拖拽所需的主进程 IPC。 */
+function registerDragIpc() {
+  if (runtime.dragIpcRegistered) return;
+  ipcMain.on(DRAG_START_CHANNEL, handleDragStart);
+  ipcMain.on(DRAG_MOVE_CHANNEL, handleDragMove);
+  ipcMain.on(DRAG_END_CHANNEL, handleDragEnd);
+  runtime.dragIpcRegistered = true;
+}
+
+/** 移除桌宠指针拖拽 IPC。 */
+function unregisterDragIpc() {
+  if (!runtime.dragIpcRegistered) return;
+  ipcMain.removeListener(DRAG_START_CHANNEL, handleDragStart);
+  ipcMain.removeListener(DRAG_MOVE_CHANNEL, handleDragMove);
+  ipcMain.removeListener(DRAG_END_CHANNEL, handleDragEnd);
+  runtime.dragIpcRegistered = false;
+}
 /** 找到承载插件管理页面的主程序窗口。 */
 function findHostWindow() {
   const focusedWindow = BrowserWindow.getFocusedWindow();
@@ -264,15 +341,20 @@ function createPetWindow(ctx) {
   });
 
   win.setMenuBarVisibility(false);
+  win.setAlwaysOnTop(true, 'screen-saver');
   win.on('move', handlePetWindowMove);
   win.webContents.on('did-finish-load', () => {
     runtime.rendererReady = true;
     publishStatus(runtime.latestStatus);
   });
   win.once('ready-to-show', () => {
-    if (!win.isDestroyed()) win.showInactive();
+    if (!win.isDestroyed()) {
+      win.showInactive();
+      win.moveTop();
+    }
   });
   win.on('closed', () => {
+    runtime.dragState = null;
     runtime.rendererReady = false;
     if (runtime.petWindow === win) runtime.petWindow = null;
   });
@@ -283,6 +365,8 @@ function createPetWindow(ctx) {
 /** 清理插件持有的窗口、订阅和计时器。 */
 function cleanupRuntime() {
   clearTerminalTimer();
+  unregisterDragIpc();
+  runtime.dragState = null;
 
   if (runtime.positionTimer) {
     clearTimeout(runtime.positionTimer);
@@ -325,6 +409,7 @@ module.exports = {
     runtime.hostWindow = findHostWindow();
     runtime.petWindow = createPetWindow(ctx);
 
+    registerDragIpc();
     if (runtime.hostWindow) {
       runtime.hostWindow.once('closed', handleHostWindowClosed);
     }

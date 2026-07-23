@@ -553,6 +553,41 @@
                      "completed_at":  "2026-07-23T09:18:55.4947252Z",
                      "qa_note":  "最终修复版：手臂、头部与眉眼分8帧连续回到中立，末段和循环首尾无瞬切。",
                      "repair_reason":  "原后半段第13→14帧手臂与头部同时瞬切回站立。"
+                 },
+                 {
+                     "id":  "idle-c",
+                     "state":  "idle",
+                     "phase":  "c",
+                     "status":  "complete",
+                     "prompt_file":  "prompts/idle-c.md",
+                     "input_images":  [
+                                          {
+                                              "path":  "references/canonical-base.png",
+                                              "role":  "canonical identity reference"
+                                          },
+                                          {
+                                              "path":  "references/reference-01.png",
+                                              "role":  "approved pet reference"
+                                          },
+                                          {
+                                              "path":  "references/layout-guide-8.png",
+                                              "role":  "layout guide for exactly 8 invisible slots; spacing only"
+                                          },
+                                          {
+                                              "path":  "references/motion-idle.png",
+                                              "role":  "old idle semantics reference only; ignore its scale inconsistencies"
+                                          },
+                                          {
+                                              "path":  "decoded/idle-b.png",
+                                              "role":  "approved phase-B continuity reference"
+                                          }
+                                      ],
+                     "output_path":  "decoded/idle-c.png",
+                     "depends_on":  "idle-b",
+                     "generation_skill":  "$imagegen",
+                     "source_path":  "C:\\Users\\Administrator\\.codex\\generated_images\\019f8e52-e0ad-7912-bb6d-e9ab737e332a\\call_PKyKFfEcimPljSAykJO7fz6Y.png",
+                     "completed_at":  "2026-07-23T09:37:04.3198374Z",
+                     "qa_note":  "8帧完整分离，动作轻微，首尾尺寸一致且末帧未放大。"
                  }
              ],
     "derived_state":  {
@@ -561,5 +596,8 @@
                           "method":  "framewise-horizontal-mirror-preserving-order",
                           "reason":  "小易造型与腹部标记左右对称，逐帧镜像可保证两侧步态尺寸完全一致"
                       },
-    "frames_per_state":  16
+    "frames_per_state":  {
+                             "idle":  24,
+                             "default":  16
+                         }
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the plugin-specific 16-frame pet atlas from generated 8-frame phase strips."""
+"""Build the plugin atlas from generated 8-frame phase strips."""
 
 from __future__ import annotations
 
@@ -35,8 +35,17 @@ STATE_ORDER = [
     "review",
 ]
 GENERATED_STATES = [state for state in STATE_ORDER if state != "running-left"]
+STATE_FRAME_COUNTS = {state: (24 if state == "idle" else FRAMES_PER_STATE) for state in STATE_ORDER}
+STATE_PHASES = {state: ("a", "b") for state in GENERATED_STATES}
+STATE_PHASES["idle"] = ("a", "b", "c")
+STATE_START_ROWS: dict[str, int] = {}
+_next_atlas_row = 0
+for _state in STATE_ORDER:
+    STATE_START_ROWS[_state] = _next_atlas_row
+    _next_atlas_row += math.ceil(STATE_FRAME_COUNTS[_state] / COLUMNS)
+ATLAS_ROWS = _next_atlas_row
 FRAME_DURATIONS_MS = {
-    "idle": 100,
+    "idle": 160,
     "running-right": 60,
     "running-left": 60,
     "waving": 70,
@@ -288,9 +297,10 @@ def resize_by_scale(image: Image.Image, scale: float) -> Image.Image:
 
 
 def normalize_state_frames(state: str, frames: list[Image.Image]) -> list[Image.Image]:
-    """统一一整组十六帧的角色体量、中心和脚底基线。"""
-    if len(frames) != FRAMES_PER_STATE:
-        raise ValueError(f"{state} requires {FRAMES_PER_STATE} frames, got {len(frames)}")
+    """统一一个状态全部帧的角色体量、中心和脚底基线。"""
+    expected_frames = STATE_FRAME_COUNTS[state]
+    if len(frames) != expected_frames:
+        raise ValueError(f"{state} requires {expected_frames} frames, got {len(frames)}")
 
     areas = [max(1, alpha_area(frame)) for frame in frames]
     target_area = statistics.median(areas)
@@ -324,6 +334,10 @@ def normalize_state_frames(state: str, frames: list[Image.Image]) -> list[Image.
         cell = Image.new("RGBA", (CELL_WIDTH, CELL_HEIGHT), (0, 0, 0, 0))
         cell.alpha_composite(sprite, (left, top))
         normalized.append(clear_transparent_rgb(cell))
+
+    # 待命动作最后一帧与静止首帧完全一致，消除回落时的尺寸跳变。
+    if state == "idle":
+        normalized[-1] = normalized[0].copy()
     return normalized
 
 
@@ -395,7 +409,7 @@ def validate_geometry(all_frames: dict[str, list[Image.Image]]) -> list[str]:
         if max(centers) - min(centers) > 1.5:
             errors.append(f"{state}: horizontal visual-center variation exceeds 1.5px")
         baselines = [int(metric["baseline"]) for metric in metrics]
-        expected = JUMP_BASELINES if state == "jumping" else [GROUND_BASELINE] * FRAMES_PER_STATE
+        expected = JUMP_BASELINES if state == "jumping" else [GROUND_BASELINE] * len(frames)
         if baselines != expected:
             errors.append(f"{state}: baseline sequence does not match the geometry contract")
     return errors
@@ -409,12 +423,15 @@ def write_frames(frames_root: Path, state: str, frames: list[Image.Image]) -> No
 
 
 def compose_atlas(all_frames: dict[str, list[Image.Image]]) -> Image.Image:
-    """按每状态两行、每行八帧合成扩展图集。"""
-    rows = len(STATE_ORDER) * 2
-    atlas = Image.new("RGBA", (COLUMNS * CELL_WIDTH, rows * CELL_HEIGHT), (0, 0, 0, 0))
-    for state_index, state in enumerate(STATE_ORDER):
+    """按状态实际帧数、每行八帧合成扩展图集。"""
+    atlas = Image.new(
+        "RGBA",
+        (COLUMNS * CELL_WIDTH, ATLAS_ROWS * CELL_HEIGHT),
+        (0, 0, 0, 0),
+    )
+    for state in STATE_ORDER:
         for frame_index, frame in enumerate(all_frames[state]):
-            row = state_index * 2 + frame_index // COLUMNS
+            row = STATE_START_ROWS[state] + frame_index // COLUMNS
             column = frame_index % COLUMNS
             atlas.alpha_composite(frame, (column * CELL_WIDTH, row * CELL_HEIGHT))
     return clear_transparent_rgb(atlas)
@@ -444,7 +461,8 @@ def make_contact_sheet(
     thumb_h = round(CELL_HEIGHT * scale)
     label_w = 118
     row_h = thumb_h + 22
-    sheet = Image.new("RGB", (label_w + thumb_w * FRAMES_PER_STATE, row_h * len(states)), (25, 28, 35))
+    max_frames = max(len(all_frames[state]) for state in states)
+    sheet = Image.new("RGB", (label_w + thumb_w * max_frames, row_h * len(states)), (25, 28, 35))
     draw = ImageDraw.Draw(sheet)
     for row_index, state in enumerate(states):
         top = row_index * row_h
@@ -472,7 +490,8 @@ def make_onion_sheet(all_frames: dict[str, list[Image.Image]], output: Path) -> 
     thumb_h = round(CELL_HEIGHT * scale)
     label_w = 118
     row_h = thumb_h + 22
-    sheet = Image.new("RGB", (label_w + thumb_w * FRAMES_PER_STATE, row_h * len(states)), (25, 28, 35))
+    max_frames = max(len(all_frames[state]) for state in states)
+    sheet = Image.new("RGB", (label_w + thumb_w * max_frames, row_h * len(states)), (25, 28, 35))
     draw = ImageDraw.Draw(sheet)
     for row_index, state in enumerate(states):
         top = row_index * row_h
@@ -490,18 +509,19 @@ def make_onion_sheet(all_frames: dict[str, list[Image.Image]], output: Path) -> 
             thumb = background.resize((thumb_w, thumb_h), Image.Resampling.LANCZOS)
             left = label_w + frame_index * thumb_w
             sheet.paste(thumb.convert("RGB"), (left, top))
-            draw.text((left + 3, top + thumb_h + 2), f"{(frame_index - 1) % 16:02d}>{frame_index:02d}", fill=(210, 215, 225))
+            previous_index = (frame_index - 1) % len(frames)
+            draw.text((left + 3, top + thumb_h + 2), f"{previous_index:02d}>{frame_index:02d}", fill=(210, 215, 225))
     output.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(output)
 
 
 def save_state_qa_sheets(all_frames: dict[str, list[Image.Image]], output_dir: Path) -> None:
-    """为每个状态生成4×4全尺寸逐帧表，便于逐张核对边界和体型。"""
+    """为每个状态生成四列全尺寸逐帧表，便于逐张核对边界和体型。"""
     output_dir.mkdir(parents=True, exist_ok=True)
     columns = 4
-    rows = 4
     label_height = 24
     for state, frames in all_frames.items():
+        rows = math.ceil(len(frames) / columns)
         sheet = Image.new(
             "RGB",
             (columns * CELL_WIDTH, rows * (CELL_HEIGHT + label_height)),
@@ -555,11 +575,19 @@ def main() -> None:
         raise SystemExit(f"unknown generated states: {', '.join(unknown_states)}")
 
     for state in selected_states:
-        phase_a = decoded_dir / f"{state}-a.png"
-        phase_b = decoded_dir / f"{state}-b.png"
-        if not phase_a.is_file() or not phase_b.is_file():
-            raise SystemExit(f"missing generated phase strips for {state}: {phase_a}, {phase_b}")
-        raw_frames = extract_phase_strip(phase_a) + extract_phase_strip(phase_b)
+        phase_paths = [
+            decoded_dir / f"{state}-{suffix}.png"
+            for suffix in STATE_PHASES[state]
+        ]
+        missing_phases = [path for path in phase_paths if not path.is_file()]
+        if missing_phases:
+            raise SystemExit(
+                f"missing generated phase strips for {state}: "
+                + ", ".join(str(path) for path in missing_phases)
+            )
+        raw_frames: list[Image.Image] = []
+        for phase_path in phase_paths:
+            raw_frames.extend(extract_phase_strip(phase_path))
         all_frames[state] = normalize_state_frames(state, raw_frames)
 
     if "running-right" in all_frames:
@@ -589,7 +617,7 @@ def main() -> None:
         "errors": geometry_errors,
         "atlas": {
             "columns": COLUMNS,
-            "rows": len(STATE_ORDER) * 2,
+            "rows": ATLAS_ROWS,
             "cell_width": CELL_WIDTH,
             "cell_height": CELL_HEIGHT,
             "width": atlas.width if atlas is not None else 0,
@@ -622,10 +650,11 @@ def main() -> None:
 
     metadata = {
         "columns": COLUMNS,
-        "rows": len(STATE_ORDER) * 2,
+        "rows": ATLAS_ROWS,
         "cellWidth": CELL_WIDTH,
         "cellHeight": CELL_HEIGHT,
-        "framesPerState": FRAMES_PER_STATE,
+        "frameCounts": STATE_FRAME_COUNTS,
+        "stateStartRows": STATE_START_ROWS,
         "stateOrder": STATE_ORDER,
         "frameDurationsMs": FRAME_DURATIONS_MS,
     }

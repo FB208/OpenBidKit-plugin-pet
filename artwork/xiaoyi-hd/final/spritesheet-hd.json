@@ -1,9 +1,30 @@
 {
   "columns": 8,
-  "rows": 18,
+  "rows": 19,
   "cellWidth": 192,
   "cellHeight": 208,
-  "framesPerState": 16,
+  "frameCounts": {
+    "idle": 24,
+    "running-right": 16,
+    "running-left": 16,
+    "waving": 16,
+    "jumping": 16,
+    "failed": 16,
+    "waiting": 16,
+    "running": 16,
+    "review": 16
+  },
+  "stateStartRows": {
+    "idle": 0,
+    "running-right": 3,
+    "running-left": 5,
+    "waving": 7,
+    "jumping": 9,
+    "failed": 11,
+    "waiting": 13,
+    "running": 15,
+    "review": 17
+  },
   "stateOrder": [
     "idle",
     "running-right",
@@ -16,7 +37,7 @@
     "review"
   ],
   "frameDurationsMs": {
-    "idle": 100,
+    "idle": 160,
     "running-right": 60,
     "running-left": 60,
     "waving": 70,
