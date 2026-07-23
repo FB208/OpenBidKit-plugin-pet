@@ -1,0 +1,91 @@
+:root {
+  color-scheme: dark;
+  font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 180px;
+  height: 212px;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+}
+
+body {
+  -webkit-app-region: drag;
+}
+
+.pet {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 10px;
+}
+
+.pet__image {
+  display: block;
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 8px 14px rgb(15 23 42 / 18%));
+}
+
+.pet__status {
+  display: flex;
+  width: 160px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 999px;
+  background: rgb(15 23 42 / 76%);
+  color: #f8fafc;
+  box-shadow: 0 4px 12px rgb(15 23 42 / 16%);
+  font-size: 12px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.pet__status-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.pet__status[data-tone="running"] .pet__status-dot {
+  background: #38bdf8;
+}
+
+.pet__status[data-tone="paused"] .pet__status-dot {
+  background: #fbbf24;
+}
+
+.pet__status[data-tone="success"] .pet__status-dot {
+  background: #4ade80;
+}
+
+.pet__status[data-tone="error"] .pet__status-dot {
+  background: #fb7185;
+}
+
+.pet__status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

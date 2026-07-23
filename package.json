@@ -1,0 +1,12 @@
+{
+  "name": "openbidkit-pet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "易标投标工具箱静态悬浮桌宠插件",
+  "author": "FB208",
+  "main": "main.cjs",
+  "scripts": {
+    "package": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/package.ps1",
+    "deploy:local": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/deploy-local.ps1"
+  }
+}

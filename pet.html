@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'"
+  >
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>易标桌宠</title>
+  <link rel="stylesheet" href="pet.css">
+</head>
+<body>
+  <main class="pet" aria-label="易标桌宠">
+    <img class="pet__image" src="assets/icon.png" alt="" draggable="false">
+    <div id="status" class="pet__status" data-tone="idle" title="当前无执行任务">
+      <span class="pet__status-dot" aria-hidden="true"></span>
+      <span id="statusText" class="pet__status-text">当前无执行任务</span>
+    </div>
+  </main>
+  <script src="pet.js"></script>
+</body>
+</html>
