@@ -77,30 +77,55 @@ function normalizeProgress(value) {
   return Math.max(0, Math.min(100, Math.round(progress)));
 }
 
+/** 提取正文生成任务的阶段进度展示信息。 */
+function getContentProgressPresentation(task, label, progress) {
+  const detail = task.type === 'content-generation' ? task.progress_detail : null;
+  if (!detail?.phase_label) return null;
+
+  const phaseLabel = String(detail.phase_label);
+  const stepLabel = String(detail.step_label || '').trim();
+  const phaseProgress = normalizeProgress(detail.phase_progress);
+  const stepPrefix = stepLabel && stepLabel !== phaseLabel ? `${stepLabel} · ` : '';
+  return {
+    title: `${label} · ${phaseLabel}`,
+    runningDetail: `${stepPrefix}总体 ${progress}% · 阶段 ${phaseProgress}%`,
+    pausingDetail: `正在暂停 · 总体 ${progress}% · 阶段 ${phaseProgress}%`,
+    pausedDetail: `已暂停 · 总体 ${progress}% · 阶段 ${phaseProgress}%`,
+    errorDetail: `执行失败 · 总体 ${progress}% · 阶段 ${phaseProgress}%`,
+    phase: detail.phase,
+    phaseProgress,
+  };
+}
+
 /** 将主程序任务转换为悬浮窗展示状态。 */
 function createTaskStatus(task) {
   const label = getTaskLabel(task);
   const progress = normalizeProgress(task.progress);
+  const contentProgress = getContentProgressPresentation(task, label, progress);
   const base = {
     taskType: task.type,
     status: task.status,
     progress,
+    phase: contentProgress?.phase || null,
+    phaseProgress: contentProgress?.phaseProgress || 0,
   };
 
   if (task.status === 'running') {
-    return { ...base, title: label, detail: `正在执行 · ${progress}%`, text: `${label} · ${progress}%`, tone: 'running' };
+    return contentProgress
+      ? { ...base, title: contentProgress.title, detail: contentProgress.runningDetail, text: `${contentProgress.title} · ${progress}%`, tone: 'running' }
+      : { ...base, title: label, detail: `正在执行 · ${progress}%`, text: `${label} · ${progress}%`, tone: 'running' };
   }
   if (task.status === 'pausing') {
-    return { ...base, title: label, detail: `正在暂停 · ${progress}%`, text: `${label} · 正在暂停`, tone: 'paused' };
+    return { ...base, title: contentProgress?.title || label, detail: contentProgress?.pausingDetail || `正在暂停 · ${progress}%`, text: `${label} · 正在暂停`, tone: 'paused' };
   }
   if (task.status === 'paused') {
-    return { ...base, title: label, detail: '已暂停', text: `${label} · 已暂停`, tone: 'paused' };
+    return { ...base, title: contentProgress?.title || label, detail: contentProgress?.pausedDetail || '已暂停', text: `${label} · 已暂停`, tone: 'paused' };
   }
   if (task.status === 'success') {
     return { ...base, title: label, detail: '已完成', text: `${label} · 已完成`, tone: 'success' };
   }
   if (task.status === 'error') {
-    return { ...base, title: label, detail: '执行失败', text: `${label} · 执行失败`, tone: 'error' };
+    return { ...base, title: contentProgress?.title || label, detail: contentProgress?.errorDetail || '执行失败', text: `${label} · 执行失败`, tone: 'error' };
   }
 
   return { ...base, title: label, detail: `正在执行 · ${progress}%`, text: `${label} · ${progress}%`, tone: 'running' };

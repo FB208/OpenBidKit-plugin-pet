@@ -105,11 +105,22 @@ getActiveTasks(): Task[]
 
 ```typescript
 interface Task {
-  id: string;                    // 任务 ID
+  task_id: string;               // 任务 ID
   type: string;                  // 任务类型
-  status: 'running' | 'paused';  // 任务状态
-  progress: number;              // 进度 0-100
-  startTime: number;             // 开始时间戳
+  status: 'running' | 'pausing' | 'paused' | 'success' | 'error';
+  progress: number;              // 当前任务全流程累计进度 0-100
+  progress_detail?: {
+    mode: 'full' | 'single' | 'correction' | 'illustration' | 'illustration-generation';
+    phase: string;               // 当前阶段代码
+    phase_label: string;         // 当前阶段中文名称
+    phase_progress: number;      // 当前阶段进度 0-100
+    completed: number;
+    total: number;
+    step: string;                // 当前子步骤代码
+    step_label: string;          // 当前子步骤说明
+  };
+  started_at: string;
+  updated_at: string;
   // ... 其他任务相关字段
 }
 ```
@@ -122,7 +133,7 @@ const tasks = ctx.getActiveTasks();
 console.log(`当前运行 ${tasks.length} 个任务`);
 
 tasks.forEach(task => {
-  console.log(`任务 ${task.id}: ${task.type} - ${task.progress}%`);
+  console.log(`任务 ${task.task_id}: ${task.type} - ${task.progress}%`);
 });
 ```
 
@@ -172,7 +183,7 @@ module.exports = {
       console.log('收到任务事件:', event.task.type);
       
       // 根据任务进度执行操作
-      if (event.task.progress === 100) {
+      if (event.task.status === 'success') {
         console.log('任务完成！');
         // 发送通知或更新界面
       }
@@ -736,11 +747,22 @@ interface PluginModule {
 
 ```typescript
 interface Task {
-  id: string;
-  type: 'technical-plan' | 'duplicate-check' | 'rejection-check' | string;
-  status: 'running' | 'paused';
-  progress: number;           // 0-100
-  startTime: number;
+  task_id: string;
+  type: string;
+  status: 'running' | 'pausing' | 'paused' | 'success' | 'error';
+  progress: number;           // 当前任务全流程累计进度 0-100
+  progress_detail?: {
+    mode: 'full' | 'single' | 'correction' | 'illustration' | 'illustration-generation';
+    phase: string;
+    phase_label: string;
+    phase_progress: number;   // 当前阶段进度 0-100
+    completed: number;
+    total: number;
+    step: string;
+    step_label: string;
+  };
+  started_at: string;
+  updated_at: string;
   // ... 其他字段根据任务类型不同
 }
 ```
@@ -954,7 +976,7 @@ module.exports = {
         }
         
         // 任务完成时显示庆祝动画
-        if (progress === 100) {
+        if (event.task.status === 'success') {
           ctx.logger.info('任务完成！');
           if (petWindow && !petWindow.isDestroyed()) {
             petWindow.webContents.send('celebrate');
