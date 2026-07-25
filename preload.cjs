@@ -30,13 +30,13 @@ contextBridge.exposeInMainWorld('petStatus', {
 
 contextBridge.exposeInMainWorld('petWindow', {
   /** 开始从角色本体拖动桌宠窗口。 */
-  startDrag(point) {
-    ipcRenderer.send(DRAG_START_CHANNEL, point);
+  startDrag() {
+    ipcRenderer.send(DRAG_START_CHANNEL);
   },
 
-  /** 按当前屏幕指针坐标移动桌宠窗口。 */
-  moveDrag(point) {
-    ipcRenderer.send(DRAG_MOVE_CHANNEL, point);
+  /** 通知主进程按当前系统光标位置移动桌宠窗口。 */
+  moveDrag() {
+    ipcRenderer.send(DRAG_MOVE_CHANNEL);
   },
 
   /** 结束桌宠窗口拖动。 */

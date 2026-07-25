@@ -234,22 +234,14 @@ function handlePointerDown(event) {
   activePointerId = event.pointerId;
   spriteElement.dataset.dragging = 'true';
   spriteElement.setPointerCapture?.(event.pointerId);
-  window.petWindow.startDrag({
-    pointerScreenX: event.screenX,
-    pointerScreenY: event.screenY,
-    pointerWindowX: event.clientX,
-    pointerWindowY: event.clientY,
-  });
+  window.petWindow.startDrag();
 }
 
-/** 将被捕获指针的屏幕坐标持续发送给主进程。 */
+/** 通知主进程跟随当前系统光标移动桌宠窗口。 */
 function handlePointerMove(event) {
   if (activePointerId !== event.pointerId) return;
 
-  window.petWindow.moveDrag({
-    pointerScreenX: event.screenX,
-    pointerScreenY: event.screenY,
-  });
+  window.petWindow.moveDrag();
 }
 
 /** 释放指针捕获并结束窗口拖拽。 */

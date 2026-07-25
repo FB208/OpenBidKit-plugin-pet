@@ -332,40 +332,32 @@ function isPetWindowSender(event) {
   );
 }
 
-/** 将渲染进程传入的坐标转换为可用数字。 */
-function getPointerCoordinate(value) {
-  const coordinate = Number(value);
-  return Number.isFinite(coordinate) ? coordinate : null;
-}
-
-/** 记录指针在桌宠窗口内的按下位置，供后续移动保持抓取点不变。 */
-function handleDragStart(event, point) {
+/** 使用主进程 DIP 坐标记录光标相对桌宠窗口的抓取位置。 */
+function handleDragStart(event) {
   if (!isPetWindowSender(event)) return;
-
-  const pointerWindowX = getPointerCoordinate(point?.pointerWindowX);
-  const pointerWindowY = getPointerCoordinate(point?.pointerWindowY);
-  if (pointerWindowX === null || pointerWindowY === null) return;
-
-  runtime.dragState = {
-    pointerWindowX,
-    pointerWindowY,
-  };
-}
-
-/** 根据屏幕指针坐标移动桌宠窗口。 */
-function handleDragMove(event, point) {
-  if (!isPetWindowSender(event) || !runtime.dragState) return;
-
-  const pointerScreenX = getPointerCoordinate(point?.pointerScreenX);
-  const pointerScreenY = getPointerCoordinate(point?.pointerScreenY);
-  if (pointerScreenX === null || pointerScreenY === null) return;
 
   const win = runtime.petWindow;
   if (!win || win.isDestroyed()) return;
 
+  const cursorPosition = screen.getCursorScreenPoint();
+  const [windowX, windowY] = win.getPosition();
+  runtime.dragState = {
+    pointerOffsetX: cursorPosition.x - windowX,
+    pointerOffsetY: cursorPosition.y - windowY,
+  };
+}
+
+/** 使用主进程 DIP 光标坐标移动桌宠窗口。 */
+function handleDragMove(event) {
+  if (!isPetWindowSender(event) || !runtime.dragState) return;
+
+  const win = runtime.petWindow;
+  if (!win || win.isDestroyed()) return;
+
+  const cursorPosition = screen.getCursorScreenPoint();
   win.setPosition(
-    Math.round(pointerScreenX - runtime.dragState.pointerWindowX),
-    Math.round(pointerScreenY - runtime.dragState.pointerWindowY),
+    Math.round(cursorPosition.x - runtime.dragState.pointerOffsetX),
+    Math.round(cursorPosition.y - runtime.dragState.pointerOffsetY),
   );
 }
 
