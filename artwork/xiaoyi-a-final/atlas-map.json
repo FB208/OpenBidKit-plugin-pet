@@ -1,0 +1,66 @@
+{
+  "sourceKind": "从最终正式图集精确拆分",
+  "sourceAtlas": "../../assets/pet-spritesheet.webp",
+  "sourceSha256": "0ae22456bc71676884a41134a89e34d5fc2e4127bb45ec4af1ac3d839f210602",
+  "atlas": {
+    "width": 1536,
+    "height": 3952,
+    "columns": 8,
+    "rows": 19,
+    "cellWidth": 192,
+    "cellHeight": 208
+  },
+  "totalFrames": 152,
+  "states": {
+    "idle": {
+      "startRow": 0,
+      "frames": 24,
+      "durationMs": 160
+    },
+    "running-right": {
+      "startRow": 3,
+      "frames": 16,
+      "durationMs": 60
+    },
+    "running-left": {
+      "startRow": 5,
+      "frames": 16,
+      "durationMs": 60
+    },
+    "waving": {
+      "startRow": 7,
+      "frames": 16,
+      "durationMs": 70
+    },
+    "jumping": {
+      "startRow": 9,
+      "frames": 16,
+      "durationMs": 65
+    },
+    "failed": {
+      "startRow": 11,
+      "frames": 16,
+      "durationMs": 90
+    },
+    "waiting": {
+      "startRow": 13,
+      "frames": 16,
+      "durationMs": 80
+    },
+    "running": {
+      "startRow": 15,
+      "frames": 16,
+      "durationMs": 60
+    },
+    "review": {
+      "startRow": 17,
+      "frames": 16,
+      "durationMs": 80
+    }
+  },
+  "notes": [
+    "frames 下的 PNG 是当前最终成稿的透明生产帧，可直接逐帧修改。",
+    "spritesheet.png 是当前正式 WebP 的无损可编辑版本。",
+    "无法由成品图集反推出已删除的高清黄底生成条带和淘汰方案。"
+  ]
+}
