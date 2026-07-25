@@ -5,6 +5,9 @@ const MOTION_CHANNEL = 'plugin:openbidkit-pet:motion';
 const DRAG_START_CHANNEL = 'plugin:openbidkit-pet:drag-start';
 const DRAG_MOVE_CHANNEL = 'plugin:openbidkit-pet:drag-move';
 const DRAG_END_CHANNEL = 'plugin:openbidkit-pet:drag-end';
+const DRAG_CANCEL_CHANNEL = 'plugin:openbidkit-pet:drag-cancel';
+const DRAG_PRESENTATION_CHANNEL = 'plugin:openbidkit-pet:drag-presentation';
+const DRAG_PREVIEW_CHANNEL = 'plugin:openbidkit-pet:drag-preview';
 
 contextBridge.exposeInMainWorld('petStatus', {
   /** 订阅桌宠状态变化，并返回取消订阅函数。 */
@@ -26,6 +29,16 @@ contextBridge.exposeInMainWorld('petStatus', {
     ipcRenderer.on(MOTION_CHANNEL, listener);
     return () => ipcRenderer.removeListener(MOTION_CHANNEL, listener);
   },
+
+  /** 订阅拖动预览显隐状态，并返回取消订阅函数。 */
+  onDragPresentation(callback) {
+    if (typeof callback !== 'function') {
+      throw new TypeError('petStatus.onDragPresentation callback must be a function');
+    }
+    const listener = (_event, presentation) => callback(presentation);
+    ipcRenderer.on(DRAG_PRESENTATION_CHANNEL, listener);
+    return () => ipcRenderer.removeListener(DRAG_PRESENTATION_CHANNEL, listener);
+  },
 });
 
 contextBridge.exposeInMainWorld('petWindow', {
@@ -34,13 +47,30 @@ contextBridge.exposeInMainWorld('petWindow', {
     ipcRenderer.send(DRAG_START_CHANNEL);
   },
 
-  /** 通知主进程按当前系统光标位置移动桌宠窗口。 */
-  moveDrag() {
-    ipcRenderer.send(DRAG_MOVE_CHANNEL);
+  /** 发送固定桌宠窗口内的指针位移。 */
+  moveDrag(delta) {
+    ipcRenderer.send(DRAG_MOVE_CHANNEL, delta);
   },
 
-  /** 结束桌宠窗口拖动。 */
-  endDrag() {
-    ipcRenderer.send(DRAG_END_CHANNEL);
+  /** 释放指针并提交最终位移。 */
+  endDrag(delta) {
+    ipcRenderer.send(DRAG_END_CHANNEL, delta);
+  },
+
+  /** 放弃被中断的拖动。 */
+  cancelDrag() {
+    ipcRenderer.send(DRAG_CANCEL_CHANNEL);
+  },
+});
+
+contextBridge.exposeInMainWorld('petDragPreview', {
+  /** 订阅固定透明画布中的角色位置。 */
+  onChange(callback) {
+    if (typeof callback !== 'function') {
+      throw new TypeError('petDragPreview.onChange callback must be a function');
+    }
+    const listener = (_event, preview) => callback(preview);
+    ipcRenderer.on(DRAG_PREVIEW_CHANNEL, listener);
+    return () => ipcRenderer.removeListener(DRAG_PREVIEW_CHANNEL, listener);
   },
 });

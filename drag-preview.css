@@ -1,0 +1,47 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  pointer-events: none;
+  user-select: none;
+}
+
+body {
+  display: block;
+  padding: 0;
+}
+
+.drag-preview__bubble-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  width: 420px;
+  height: 136px;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.drag-preview {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  width: 132px;
+  height: 143px;
+  background-image: url("assets/pet-spritesheet.webp");
+  background-repeat: no-repeat;
+  background-position: 0 16.6667%;
+  background-size: 800% 1900%;
+  will-change: transform, background-position;
+}

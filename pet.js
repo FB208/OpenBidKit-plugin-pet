@@ -25,6 +25,7 @@ let greeted = false;
 let startupAnimationActive = false;
 let pointerOverPet = false;
 let activePointerId = null;
+let pointerDragStart = null;
 
 /** 将指定动画帧定位到精灵图中的对应单元格。 */
 function renderFrame(animation, frameIndex) {
@@ -226,32 +227,48 @@ function renderMotion(motion) {
   }
 }
 
-/** 在角色本体按下主指针时开始手动窗口拖拽。 */
+/** 计算指针相对固定桌宠窗口的位移。 */
+function getPointerDragDelta(event) {
+  if (!pointerDragStart) return { x: 0, y: 0 };
+  return {
+    x: event.clientX - pointerDragStart.x,
+    y: event.clientY - pointerDragStart.y,
+  };
+}
+
+/** 在角色本体按下主指针时开始图层预览拖拽。 */
 function handlePointerDown(event) {
   if (event.button !== 0 || event.isPrimary === false || activePointerId !== null) return;
 
   event.preventDefault();
   activePointerId = event.pointerId;
+  pointerDragStart = { x: event.clientX, y: event.clientY };
   spriteElement.dataset.dragging = 'true';
   spriteElement.setPointerCapture?.(event.pointerId);
   window.petWindow.startDrag();
 }
 
-/** 通知主进程跟随当前系统光标移动桌宠窗口。 */
+/** 让固定透明画布中的角色图层跟随窗口内指针位移。 */
 function handlePointerMove(event) {
   if (activePointerId !== event.pointerId) return;
-
-  window.petWindow.moveDrag();
+  window.petWindow.moveDrag(getPointerDragDelta(event));
 }
 
-/** 释放指针捕获并结束窗口拖拽。 */
+/** 释放时提交最终位置；捕获中断时放弃本次拖动。 */
 function finishPointerDrag(event) {
   if (activePointerId !== event.pointerId) return;
 
   const pointerId = activePointerId;
+  const shouldCommit = event.type === 'pointerup';
+  const delta = getPointerDragDelta(event);
   activePointerId = null;
+  pointerDragStart = null;
   delete spriteElement.dataset.dragging;
-  window.petWindow.endDrag();
+  if (shouldCommit) {
+    window.petWindow.endDrag(delta);
+  } else {
+    window.petWindow.cancelDrag();
+  }
 
   if (
     event.type !== 'lostpointercapture'
@@ -261,6 +278,10 @@ function finishPointerDrag(event) {
   }
 }
 
+/** 拖动预览期间只隐藏角色图像，保留原窗口的指针捕获。 */
+function renderDragPresentation(presentation) {
+  spriteElement.dataset.previewing = presentation?.active ? 'true' : 'false';
+}
 spriteElement.addEventListener('pointerenter', handlePointerEnter);
 spriteElement.addEventListener('pointerleave', handlePointerLeave);
 spriteElement.addEventListener('pointerdown', handlePointerDown);
@@ -271,14 +292,17 @@ spriteElement.addEventListener('lostpointercapture', finishPointerDrag);
 
 const unsubscribeStatus = window.petStatus.onChange(renderStatus);
 const unsubscribeMotion = window.petStatus.onMotion(renderMotion);
+const unsubscribeDragPresentation = window.petStatus.onDragPresentation(renderDragPresentation);
 
 window.addEventListener('beforeunload', () => {
   if (activePointerId !== null) {
     activePointerId = null;
+    pointerDragStart = null;
     delete spriteElement.dataset.dragging;
-    window.petWindow.endDrag();
+    window.petWindow.cancelDrag();
   }
   stopAnimation();
   unsubscribeStatus();
   unsubscribeMotion();
+  unsubscribeDragPresentation();
 });

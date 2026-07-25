@@ -48,3 +48,7 @@ body {
 .pet__sprite[data-dragging="true"] {
   cursor: grabbing;
 }
+
+.pet__sprite[data-previewing="true"] {
+  opacity: 0;
+}

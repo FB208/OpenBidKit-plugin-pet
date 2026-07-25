@@ -7,8 +7,15 @@ const MOTION_CHANNEL = `plugin:${PLUGIN_ID}:motion`;
 const DRAG_START_CHANNEL = `plugin:${PLUGIN_ID}:drag-start`;
 const DRAG_MOVE_CHANNEL = `plugin:${PLUGIN_ID}:drag-move`;
 const DRAG_END_CHANNEL = `plugin:${PLUGIN_ID}:drag-end`;
+const DRAG_CANCEL_CHANNEL = `plugin:${PLUGIN_ID}:drag-cancel`;
+const DRAG_PRESENTATION_CHANNEL = `plugin:${PLUGIN_ID}:drag-presentation`;
+const DRAG_PREVIEW_CHANNEL = `plugin:${PLUGIN_ID}:drag-preview`;
 const PET_WINDOW_WIDTH = 160;
 const PET_WINDOW_HEIGHT = 151;
+const PET_SPRITE_WIDTH = 132;
+const PET_SPRITE_HEIGHT = 143;
+const PET_SPRITE_INSET_X = Math.round((PET_WINDOW_WIDTH - PET_SPRITE_WIDTH) / 2);
+const PET_SPRITE_INSET_Y = Math.round((PET_WINDOW_HEIGHT - PET_SPRITE_HEIGHT) / 2);
 const BUBBLE_WINDOW_WIDTH = 420;
 const BUBBLE_WINDOW_HEIGHT = 136;
 const BUBBLE_WINDOW_GAP = 8;
@@ -38,6 +45,7 @@ const TERMINAL_DELAYS = Object.freeze({
 const runtime = {
   ctx: null,
   bubbleWindow: null,
+  dragPreviewWindow: null,
   petWindow: null,
   hostWindow: null,
   unsubscribeTask: null,
@@ -47,9 +55,11 @@ const runtime = {
   lastWindowX: null,
   dragState: null,
   dragIpcRegistered: false,
+  dragPreviewRendererReady: false,
   petRendererReady: false,
   bubbleRendererReady: false,
   latestStatus: createIdleStatus(),
+  latestDragPreview: null,
 };
 
 /** 创建空闲状态。 */
@@ -155,6 +165,21 @@ function sendToWindow(win, channel, payload) {
   win.webContents.send(channel, payload);
 }
 
+/** 计算所有显示器共同覆盖的固定透明画布。 */
+function getVirtualDesktopBounds() {
+  const displays = screen.getAllDisplays();
+  const left = Math.min(...displays.map(({ bounds }) => bounds.x));
+  const top = Math.min(...displays.map(({ bounds }) => bounds.y));
+  const right = Math.max(...displays.map(({ bounds }) => bounds.x + bounds.width));
+  const bottom = Math.max(...displays.map(({ bounds }) => bounds.y + bounds.height));
+  return {
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
+  };
+}
+
 
 /** 向桌宠渲染页发送最新状态。 */
 function publishStatus(status) {
@@ -165,12 +190,21 @@ function publishStatus(status) {
   if (runtime.bubbleRendererReady) {
     sendToWindow(runtime.bubbleWindow, STATUS_CHANNEL, status);
   }
+  if (runtime.dragPreviewRendererReady) {
+    sendToWindow(runtime.dragPreviewWindow, STATUS_CHANNEL, status);
+  }
 }
 
 /** 向渲染页发送窗口拖动方向。 */
 function publishMotion(motion) {
   if (!runtime.petRendererReady) return;
   sendToWindow(runtime.petWindow, MOTION_CHANNEL, motion);
+}
+
+/** 控制原桌宠在拖动预览期间是否隐藏。 */
+function publishDragPresentation(active) {
+  if (!runtime.petRendererReady) return;
+  sendToWindow(runtime.petWindow, DRAG_PRESENTATION_CHANNEL, { active });
 }
 
 /** 显示当前活动任务；没有任务时显示空闲。 */
@@ -237,12 +271,8 @@ function clamp(value, minimum, maximum) {
   return Math.min(Math.max(value, minimum), maximum);
 }
 
-/** 计算独立状态气泡相对于桌宠窗口的位置。 */
-function getBubbleWindowPosition() {
-  const petWindow = runtime.petWindow;
-  if (!petWindow || petWindow.isDestroyed()) return null;
-
-  const petBounds = petWindow.getBounds();
+/** 计算指定桌宠坐标对应的状态气泡位置。 */
+function calculateBubbleWindowPosition(petBounds) {
   const { workArea } = screen.getDisplayMatching(petBounds);
   const minimumX = workArea.x + BUBBLE_EDGE_MARGIN;
   const maximumX = Math.max(
@@ -268,6 +298,13 @@ function getBubbleWindowPosition() {
     x: clamp(desiredX, minimumX, maximumX),
     y: desiredY,
   };
+}
+
+/** 计算独立状态气泡相对于当前桌宠窗口的位置。 */
+function getBubbleWindowPosition() {
+  const petWindow = runtime.petWindow;
+  if (!petWindow || petWindow.isDestroyed()) return null;
+  return calculateBubbleWindowPosition(petWindow.getBounds());
 }
 
 /** 让独立状态气泡跟随桌宠窗口移动。 */
@@ -332,47 +369,134 @@ function isPetWindowSender(event) {
   );
 }
 
-/** 使用主进程 DIP 坐标记录光标相对桌宠窗口的抓取位置。 */
+/** 将渲染进程提供的同一窗口内位移规范为整数像素。 */
+function normalizeDragDelta(delta) {
+  const x = Number(delta?.x);
+  const y = Number(delta?.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x: Math.round(x), y: Math.round(y) };
+}
+
+/** 显示固定透明画布中的桌宠拖动预览。 */
+function showDragPreview(windowX, windowY, direction) {
+  const previewWindow = runtime.dragPreviewWindow;
+  if (!previewWindow || previewWindow.isDestroyed()) return;
+
+  const previewBounds = previewWindow.getBounds();
+  const bubblePosition = calculateBubbleWindowPosition({
+    x: windowX,
+    y: windowY,
+    width: PET_WINDOW_WIDTH,
+    height: PET_WINDOW_HEIGHT,
+  });
+  runtime.latestDragPreview = {
+    active: true,
+    x: windowX - previewBounds.x + PET_SPRITE_INSET_X,
+    y: windowY - previewBounds.y + PET_SPRITE_INSET_Y,
+    bubbleX: bubblePosition.x - previewBounds.x,
+    bubbleY: bubblePosition.y - previewBounds.y,
+    direction,
+  };
+  if (runtime.dragPreviewRendererReady) {
+    sendToWindow(previewWindow, DRAG_PREVIEW_CHANNEL, runtime.latestDragPreview);
+  }
+  if (!previewWindow.isVisible()) {
+    previewWindow.showInactive();
+    previewWindow.moveTop();
+  }
+}
+
+/** 关闭拖动预览并恢复原桌宠和状态气泡。 */
+function hideDragPreview() {
+  runtime.latestDragPreview = null;
+  const previewWindow = runtime.dragPreviewWindow;
+  if (previewWindow && !previewWindow.isDestroyed()) previewWindow.hide();
+  publishDragPresentation(false);
+
+  const bubbleWindow = runtime.bubbleWindow;
+  if (bubbleWindow && !bubbleWindow.isDestroyed()) {
+    syncBubbleWindowPosition();
+    bubbleWindow.showInactive();
+    bubbleWindow.moveTop();
+  }
+}
+
+/** 根据固定窗口内的指针位移更新预览位置。 */
+function updateDragPreview(delta) {
+  const state = runtime.dragState;
+  if (!state) return null;
+
+  const target = {
+    x: state.windowX + delta.x,
+    y: state.windowY + delta.y,
+  };
+  if (delta.x !== state.deltaX) {
+    state.direction = delta.x < state.deltaX ? 'left' : 'right';
+  }
+  state.deltaX = delta.x;
+  state.deltaY = delta.y;
+  showDragPreview(target.x, target.y, state.direction);
+  return target;
+}
+
+/** 记录拖动起点；按住期间不再移动任何真实桌宠窗口。 */
 function handleDragStart(event) {
   if (!isPetWindowSender(event)) return;
 
   const win = runtime.petWindow;
   if (!win || win.isDestroyed()) return;
 
-  const cursorPosition = screen.getCursorScreenPoint();
   const [windowX, windowY] = win.getPosition();
   runtime.dragState = {
-    pointerOffsetX: cursorPosition.x - windowX,
-    pointerOffsetY: cursorPosition.y - windowY,
+    windowX,
+    windowY,
+    deltaX: 0,
+    deltaY: 0,
+    direction: 'right',
   };
+  publishDragPresentation(true);
+  const bubbleWindow = runtime.bubbleWindow;
+  if (bubbleWindow && !bubbleWindow.isDestroyed()) bubbleWindow.hide();
+  showDragPreview(windowX, windowY, 'right');
 }
 
-/** 使用主进程 DIP 光标坐标移动桌宠窗口。 */
-function handleDragMove(event) {
+/** 仅移动固定透明画布中的角色图层。 */
+function handleDragMove(event, rawDelta) {
   if (!isPetWindowSender(event) || !runtime.dragState) return;
+  const delta = normalizeDragDelta(rawDelta);
+  if (!delta) return;
+  updateDragPreview(delta);
+}
+
+/** 指针释放后一次性提交真实窗口位置。 */
+function handleDragEnd(event, rawDelta) {
+  if (!isPetWindowSender(event) || !runtime.dragState) return;
+  const delta = normalizeDragDelta(rawDelta);
+  const state = runtime.dragState;
+  runtime.dragState = null;
 
   const win = runtime.petWindow;
-  if (!win || win.isDestroyed()) return;
-
-  const cursorPosition = screen.getCursorScreenPoint();
-  win.setPosition(
-    Math.round(cursorPosition.x - runtime.dragState.pointerOffsetX),
-    Math.round(cursorPosition.y - runtime.dragState.pointerOffsetY),
-  );
+  if (delta && win && !win.isDestroyed()) {
+    win.setPosition(state.windowX + delta.x, state.windowY + delta.y);
+    syncBubbleWindowPosition();
+    schedulePositionSave();
+  }
+  hideDragPreview();
 }
 
-/** 结束当前指针拖拽。 */
-function handleDragEnd(event) {
-  if (!isPetWindowSender(event)) return;
+/** 指针捕获意外终止时放弃本次位置变更。 */
+function handleDragCancel(event) {
+  if (!isPetWindowSender(event) || !runtime.dragState) return;
   runtime.dragState = null;
+  hideDragPreview();
 }
-
 /** 注册桌宠指针拖拽所需的主进程 IPC。 */
 function registerDragIpc() {
   if (runtime.dragIpcRegistered) return;
   ipcMain.on(DRAG_START_CHANNEL, handleDragStart);
   ipcMain.on(DRAG_MOVE_CHANNEL, handleDragMove);
   ipcMain.on(DRAG_END_CHANNEL, handleDragEnd);
+  ipcMain.on(DRAG_CANCEL_CHANNEL, handleDragCancel);
   runtime.dragIpcRegistered = true;
 }
 
@@ -382,6 +506,7 @@ function unregisterDragIpc() {
   ipcMain.removeListener(DRAG_START_CHANNEL, handleDragStart);
   ipcMain.removeListener(DRAG_MOVE_CHANNEL, handleDragMove);
   ipcMain.removeListener(DRAG_END_CHANNEL, handleDragEnd);
+  ipcMain.removeListener(DRAG_CANCEL_CHANNEL, handleDragCancel);
   runtime.dragIpcRegistered = false;
 }
 /** 找到承载插件管理页面的主程序窗口。 */
@@ -507,6 +632,52 @@ function createBubbleWindow(ctx) {
   return win;
 }
 
+/** 创建始终静止、完全穿透鼠标的桌面拖动预览画布。 */
+function createDragPreviewWindow(ctx) {
+  const bounds = getVirtualDesktopBounds();
+  const win = ctx.createWindow({
+    ...bounds,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    focusable: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    hasShadow: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+    },
+  });
+
+  win.setMenuBarVisibility(false);
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.setIgnoreMouseEvents(true);
+  win.webContents.on('did-finish-load', () => {
+    if (runtime.dragPreviewWindow !== win) return;
+    runtime.dragPreviewRendererReady = true;
+    sendToWindow(win, STATUS_CHANNEL, runtime.latestStatus);
+    if (runtime.latestDragPreview) {
+      sendToWindow(win, DRAG_PREVIEW_CHANNEL, runtime.latestDragPreview);
+    }
+  });
+  win.on('closed', () => {
+    if (runtime.dragPreviewWindow !== win) return;
+    runtime.dragPreviewRendererReady = false;
+    runtime.dragPreviewWindow = null;
+  });
+  void win.loadFile(path.join(__dirname, 'drag-preview.html'));
+  return win;
+}
+
 /** 清理插件持有的窗口、订阅和计时器。 */
 function cleanupRuntime() {
   clearTerminalTimer();
@@ -522,6 +693,7 @@ function cleanupRuntime() {
     runtime.movementTimer = null;
   }
   runtime.lastWindowX = null;
+  runtime.latestDragPreview = null;
   if (runtime.unsubscribeTask) {
     runtime.unsubscribeTask();
     runtime.unsubscribeTask = null;
@@ -535,6 +707,11 @@ function cleanupRuntime() {
   runtime.bubbleWindow = null;
   runtime.bubbleRendererReady = false;
   if (bubbleWindow && !bubbleWindow.isDestroyed()) bubbleWindow.close();
+
+  const dragPreviewWindow = runtime.dragPreviewWindow;
+  runtime.dragPreviewWindow = null;
+  runtime.dragPreviewRendererReady = false;
+  if (dragPreviewWindow && !dragPreviewWindow.isDestroyed()) dragPreviewWindow.close();
 
   const petWindow = runtime.petWindow;
   runtime.petWindow = null;
@@ -559,6 +736,7 @@ module.exports = {
     runtime.hostWindow = findHostWindow();
     runtime.petWindow = createPetWindow(ctx);
     runtime.bubbleWindow = createBubbleWindow(ctx);
+    runtime.dragPreviewWindow = createDragPreviewWindow(ctx);
 
     registerDragIpc();
     if (runtime.hostWindow) {
