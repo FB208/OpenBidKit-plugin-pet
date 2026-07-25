@@ -1,3 +1,4 @@
+(() => {
 const bubbleElement = document.getElementById('statusBubble');
 const titleElement = document.getElementById('bubbleTitle');
 const detailElement = document.getElementById('bubbleDetail');
@@ -30,3 +31,5 @@ const unsubscribeStatus = window.petStatus.onChange(renderStatus);
 window.addEventListener('beforeunload', () => {
   unsubscribeStatus();
 });
+
+})();

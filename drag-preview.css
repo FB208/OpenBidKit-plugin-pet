@@ -1,7 +1,3 @@
-* {
-  box-sizing: border-box;
-}
-
 html,
 body {
   width: 100%;
@@ -32,16 +28,10 @@ body {
   will-change: transform;
 }
 
-.drag-preview {
+.drag-preview__sprite {
   position: absolute;
   top: 0;
   left: 0;
   display: none;
-  width: 132px;
-  height: 143px;
-  background-image: url("assets/pet-spritesheet.webp");
-  background-repeat: no-repeat;
-  background-position: 0 16.6667%;
-  background-size: 800% 1900%;
   will-change: transform, background-position;
 }

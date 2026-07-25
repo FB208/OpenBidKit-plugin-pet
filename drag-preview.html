@@ -7,8 +7,9 @@
     content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'"
   >
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>易标桌宠拖动预览</title>
+  <title>易标桌宠视觉层</title>
   <link rel="stylesheet" href="bubble.css">
+  <link rel="stylesheet" href="pet.css">
   <link rel="stylesheet" href="drag-preview.css">
 </head>
 <body>
@@ -28,8 +29,9 @@
       <span id="bubbleIcon" class="bubble__icon" aria-hidden="true">•</span>
     </main>
   </div>
-  <div id="dragPreviewSprite" class="drag-preview" role="presentation"></div>
+  <div id="petSprite" class="pet__sprite drag-preview__sprite" role="img" aria-label="小易"></div>
   <script src="bubble.js"></script>
+  <script src="pet.js"></script>
   <script src="drag-preview.js"></script>
 </body>
 </html>

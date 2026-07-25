@@ -1,3 +1,4 @@
+(() => {
 const spriteElement = document.getElementById('petSprite');
 
 const ANIMATIONS = Object.freeze({
@@ -24,8 +25,6 @@ let movementActive = false;
 let greeted = false;
 let startupAnimationActive = false;
 let pointerOverPet = false;
-let activePointerId = null;
-let pointerDragStart = null;
 
 /** 将指定动画帧定位到精灵图中的对应单元格。 */
 function renderFrame(animation, frameIndex) {
@@ -227,82 +226,25 @@ function renderMotion(motion) {
   }
 }
 
-/** 计算指针相对固定桌宠窗口的位移。 */
-function getPointerDragDelta(event) {
-  if (!pointerDragStart) return { x: 0, y: 0 };
-  return {
-    x: event.clientX - pointerDragStart.x,
-    y: event.clientY - pointerDragStart.y,
-  };
-}
-
-/** 在角色本体按下主指针时开始图层预览拖拽。 */
-function handlePointerDown(event) {
-  if (event.button !== 0 || event.isPrimary === false || activePointerId !== null) return;
-
-  event.preventDefault();
-  activePointerId = event.pointerId;
-  pointerDragStart = { x: event.clientX, y: event.clientY };
-  spriteElement.dataset.dragging = 'true';
-  spriteElement.setPointerCapture?.(event.pointerId);
-  window.petWindow.startDrag();
-}
-
-/** 让固定透明画布中的角色图层跟随窗口内指针位移。 */
-function handlePointerMove(event) {
-  if (activePointerId !== event.pointerId) return;
-  window.petWindow.moveDrag(getPointerDragDelta(event));
-}
-
-/** 释放时提交最终位置；捕获中断时放弃本次拖动。 */
-function finishPointerDrag(event) {
-  if (activePointerId !== event.pointerId) return;
-
-  const pointerId = activePointerId;
-  const shouldCommit = event.type === 'pointerup';
-  const delta = getPointerDragDelta(event);
-  activePointerId = null;
-  pointerDragStart = null;
-  delete spriteElement.dataset.dragging;
-  if (shouldCommit) {
-    window.petWindow.endDrag(delta);
+/** 应用透明输入层转发的鼠标悬停状态。 */
+function renderHover(hovered) {
+  const nextHovered = Boolean(hovered);
+  if (nextHovered === pointerOverPet) return;
+  if (nextHovered) {
+    handlePointerEnter();
   } else {
-    window.petWindow.cancelDrag();
-  }
-
-  if (
-    event.type !== 'lostpointercapture'
-    && spriteElement.hasPointerCapture?.(pointerId)
-  ) {
-    spriteElement.releasePointerCapture(pointerId);
+    handlePointerLeave();
   }
 }
-
-/** 拖动预览期间只隐藏角色图像，保留原窗口的指针捕获。 */
-function renderDragPresentation(presentation) {
-  spriteElement.dataset.previewing = presentation?.active ? 'true' : 'false';
-}
-spriteElement.addEventListener('pointerenter', handlePointerEnter);
-spriteElement.addEventListener('pointerleave', handlePointerLeave);
-spriteElement.addEventListener('pointerdown', handlePointerDown);
-spriteElement.addEventListener('pointermove', handlePointerMove);
-spriteElement.addEventListener('pointerup', finishPointerDrag);
-spriteElement.addEventListener('pointercancel', finishPointerDrag);
-spriteElement.addEventListener('lostpointercapture', finishPointerDrag);
 
 const unsubscribeStatus = window.petStatus.onChange(renderStatus);
 const unsubscribeMotion = window.petStatus.onMotion(renderMotion);
-const unsubscribeDragPresentation = window.petStatus.onDragPresentation(renderDragPresentation);
+const unsubscribeHover = window.petStatus.onHover(renderHover);
 
 window.addEventListener('beforeunload', () => {
-  if (activePointerId !== null) {
-    activePointerId = null;
-    pointerDragStart = null;
-    delete spriteElement.dataset.dragging;
-    window.petWindow.cancelDrag();
-  }
   stopAnimation();
   unsubscribeStatus();
   unsubscribeMotion();
-  unsubscribeDragPresentation();
+  unsubscribeHover();
 });
+})();
