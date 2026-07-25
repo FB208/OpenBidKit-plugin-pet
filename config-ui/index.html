@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'"
+  >
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>易标桌宠设置</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="settings-shell">
+    <header class="settings-header">
+      <div>
+        <p class="settings-kicker">易标桌宠</p>
+        <h1>皮肤设置</h1>
+        <p class="settings-description">选择后将立即保存，并同步应用到正在运行的桌宠。</p>
+      </div>
+      <span class="settings-badge">外观</span>
+    </header>
+
+    <section class="settings-section" aria-labelledby="skinSectionTitle">
+      <div class="section-heading">
+        <div>
+          <h2 id="skinSectionTitle">角色皮肤</h2>
+          <p>所有皮肤共用当前动画与交互行为。</p>
+        </div>
+      </div>
+      <div id="skinList" class="skin-list" role="radiogroup" aria-label="角色皮肤"></div>
+    </section>
+
+    <p id="saveStatus" class="save-status" data-tone="muted" role="status" aria-live="polite">
+      正在读取当前设置…
+    </p>
+  </main>
+
+  <template id="skinCardTemplate">
+    <button class="skin-card" type="button" role="radio" aria-checked="false">
+      <span class="skin-card__preview" aria-hidden="true">
+        <img alt="">
+      </span>
+      <span class="skin-card__copy">
+        <strong class="skin-card__name"></strong>
+        <span class="skin-card__description"></span>
+      </span>
+      <span class="skin-card__check" aria-hidden="true">✓</span>
+    </button>
+  </template>
+
+  <script src="../skin-registry.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -16,5 +16,6 @@
                         "task:subscribe",
                         "window:create"
                     ],
-    "hasConfig":  false
+    "hasConfig":  true,
+    "configUI":  "./config-ui/index.html"
 }

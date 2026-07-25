@@ -40,6 +40,7 @@ $packageFiles = @(
   "package.json",
   "main.cjs",
   "preload.cjs",
+  "skin-registry.js",
   "bubble.html",
   "bubble.css",
   "bubble.js",
@@ -51,9 +52,11 @@ $packageFiles = @(
   "drag-handle.js",
   "pet.html",
   "pet.css",
-  "pet.js",
-  "assets\icon.png",
-  "assets\pet-spritesheet.webp"
+  "pet.js"
+)
+$packageDirectories = @(
+  "assets",
+  "config-ui"
 )
 
 try {
@@ -73,6 +76,16 @@ try {
     $destinationDirectory = Split-Path -Parent $destinationPath
     New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
     Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
+  }
+
+  foreach ($relativePath in $packageDirectories) {
+    $sourceDirectory = Join-Path $projectRoot $relativePath
+    if (-not (Test-Path -LiteralPath $sourceDirectory -PathType Container)) {
+      throw "Missing package directory: $relativePath"
+    }
+
+    $destinationDirectory = Join-Path $stageRoot $relativePath
+    Copy-Item -LiteralPath $sourceDirectory -Destination $destinationDirectory -Recurse -Force
   }
 
   Compress-Archive -Path (Join-Path $stageRoot "*") -DestinationPath $archivePath -CompressionLevel Optimal -Force

@@ -1,9 +1,12 @@
 const path = require('path');
 const { BrowserWindow, ipcMain, screen } = require('electron');
+const skinRegistry = require('./skin-registry.js');
 
 const PLUGIN_ID = 'openbidkit-pet';
 const STATUS_CHANNEL = `plugin:${PLUGIN_ID}:status`;
 const MOTION_CHANNEL = `plugin:${PLUGIN_ID}:motion`;
+const SKIN_CHANNEL = `plugin:${PLUGIN_ID}:skin`;
+const SKIN_READY_CHANNEL = `plugin:${PLUGIN_ID}:skin-ready`;
 const DRAG_START_CHANNEL = `plugin:${PLUGIN_ID}:drag-start`;
 const DRAG_MOVE_CHANNEL = `plugin:${PLUGIN_ID}:drag-move`;
 const DRAG_END_CHANNEL = `plugin:${PLUGIN_ID}:drag-end`;
@@ -53,6 +56,7 @@ const runtime = {
   dragState: null,
   dragIpcRegistered: false,
   dragPreviewRendererReady: false,
+  latestSkin: null,
   latestStatus: createIdleStatus(),
   latestDragPreview: null,
   latestHovered: false,
@@ -160,6 +164,29 @@ function sendToWindow(win, channel, payload) {
   win.webContents.send(channel, payload);
 }
 
+/** 将已注册皮肤转换为视觉层所需的展示数据。 */
+function createSkinPresentation(skin) {
+  return {
+    id: skin.id,
+    name: skin.name,
+    spriteSheet: skin.spriteSheet,
+    atlas: skinRegistry.atlas,
+  };
+}
+
+/** 读取当前配置对应的皮肤；首次使用时选择注册表默认项。 */
+function getConfiguredSkin(ctx) {
+  const storedSkinId = ctx.store.get('skinId');
+  const skinId = storedSkinId === undefined
+    ? skinRegistry.defaultSkinId
+    : String(storedSkinId);
+  const skin = skinRegistry.getSkin(skinId);
+  if (!skin) {
+    throw new Error(`未注册的桌宠皮肤: ${skinId}`);
+  }
+  return createSkinPresentation(skin);
+}
+
 /** 计算所有显示器共同覆盖的固定透明画布。 */
 function getVirtualDesktopBounds() {
   const displays = screen.getAllDisplays();
@@ -182,6 +209,13 @@ function publishStatus(status) {
   if (runtime.dragPreviewRendererReady) {
     sendToWindow(runtime.dragPreviewWindow, STATUS_CHANNEL, status);
   }
+}
+
+/** 向唯一视觉层发送当前皮肤。 */
+function publishSkin(skin) {
+  runtime.latestSkin = skin;
+  if (!runtime.dragPreviewRendererReady) return;
+  sendToWindow(runtime.dragPreviewWindow, SKIN_CHANNEL, skin);
 }
 
 /** 向唯一视觉层发送拖动动画状态。 */
@@ -324,6 +358,28 @@ function isPetWindowSender(event) {
   );
 }
 
+/** 判断 IPC 是否来自当前桌宠视觉层。 */
+function isDragPreviewWindowSender(event) {
+  const win = runtime.dragPreviewWindow;
+  return Boolean(
+    win
+    && !win.isDestroyed()
+    && !win.webContents.isDestroyed()
+    && event.sender === win.webContents
+  );
+}
+
+/** 首张皮肤图集完成解码后再显示视觉层，避免启动闪烁。 */
+function handleSkinReady(event, skinId) {
+  if (!isDragPreviewWindowSender(event)) return;
+  if (String(skinId) !== runtime.latestSkin?.id) return;
+
+  const win = runtime.dragPreviewWindow;
+  if (!win || win.isDestroyed() || win.isVisible()) return;
+  win.showInactive();
+  win.moveTop();
+}
+
 /** 将渲染进程提供的同一窗口内位移规范为整数像素。 */
 function normalizeDragDelta(delta) {
   const x = Number(delta?.x);
@@ -448,6 +504,7 @@ function registerDragIpc() {
   ipcMain.on(DRAG_END_CHANNEL, handleDragEnd);
   ipcMain.on(DRAG_CANCEL_CHANNEL, handleDragCancel);
   ipcMain.on(HOVER_CHANNEL, handlePetHover);
+  ipcMain.on(SKIN_READY_CHANNEL, handleSkinReady);
   runtime.dragIpcRegistered = true;
 }
 
@@ -459,6 +516,7 @@ function unregisterDragIpc() {
   ipcMain.removeListener(DRAG_END_CHANNEL, handleDragEnd);
   ipcMain.removeListener(DRAG_CANCEL_CHANNEL, handleDragCancel);
   ipcMain.removeListener(HOVER_CHANNEL, handlePetHover);
+  ipcMain.removeListener(SKIN_READY_CHANNEL, handleSkinReady);
   runtime.dragIpcRegistered = false;
 }
 /** 找到承载插件管理页面的主程序窗口。 */
@@ -550,16 +608,11 @@ function createDragPreviewWindow(ctx) {
   win.webContents.on('did-finish-load', () => {
     if (runtime.dragPreviewWindow !== win) return;
     runtime.dragPreviewRendererReady = true;
+    sendToWindow(win, SKIN_CHANNEL, runtime.latestSkin);
     sendToWindow(win, STATUS_CHANNEL, runtime.latestStatus);
     sendToWindow(win, HOVER_CHANNEL, runtime.latestHovered);
     if (runtime.latestDragPreview) {
       sendToWindow(win, DRAG_PREVIEW_CHANNEL, runtime.latestDragPreview);
-    }
-  });
-  win.once('ready-to-show', () => {
-    if (runtime.dragPreviewWindow === win && !win.isDestroyed()) {
-      win.showInactive();
-      win.moveTop();
     }
   });
   win.on('closed', () => {
@@ -584,6 +637,7 @@ function cleanupRuntime() {
   }
   runtime.latestDragPreview = null;
   runtime.latestHovered = false;
+  runtime.latestSkin = null;
   if (runtime.unsubscribeTask) {
     runtime.unsubscribeTask();
     runtime.unsubscribeTask = null;
@@ -615,6 +669,7 @@ module.exports = {
   async activate(ctx) {
     cleanupRuntime();
     runtime.ctx = ctx;
+    runtime.latestSkin = getConfiguredSkin(ctx);
     runtime.latestStatus = createIdleStatus();
     runtime.hostWindow = findHostWindow();
     runtime.petWindow = createPetWindow(ctx);
@@ -630,6 +685,19 @@ module.exports = {
     publishLatestActiveOrIdle();
     runtime.unsubscribeTask = ctx.onTaskEvent(handleTaskEvent);
     ctx.logger.info('易标桌宠已启用');
+  },
+
+  /** 配置页保存皮肤后，无需重启插件即可更新视觉层。 */
+  async onConfigChange(change) {
+    if (change?.key !== 'skinId' || !runtime.ctx) return;
+
+    const skin = skinRegistry.getSkin(String(change.value));
+    if (!skin) {
+      throw new Error(`未注册的桌宠皮肤: ${change.value}`);
+    }
+
+    publishSkin(createSkinPresentation(skin));
+    runtime.ctx.logger.info(`桌宠皮肤已切换: ${skin.id}`);
   },
 
   /** 停用插件并释放全部运行资源。 */

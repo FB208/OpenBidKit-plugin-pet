@@ -554,7 +554,7 @@ set(key: string, value: any): Promise<boolean>
 
 **返回值：** `Promise<boolean>` - 成功返回 true
 
-**说明：** 异步保存插件配置。
+**说明：** 异步保存插件配置。插件处于启用状态且模块暴露了 `onConfigChange(change)` 时，保存成功后主程序会立即调用该钩子。
 
 **示例（配置窗口中）：**
 
@@ -735,6 +735,11 @@ interface PluginModule {
    * @param ctx 插件上下文
    */
   activate(ctx: PluginContext): Promise<void> | void;
+
+  /**
+   * 配置页保存后调用（可选）
+   */
+  onConfigChange?(change: { key: string; value: any }): Promise<void> | void;
   
   /**
    * 插件停用时调用

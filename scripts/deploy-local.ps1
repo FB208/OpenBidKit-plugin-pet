@@ -24,6 +24,7 @@ $runtimeFiles = @(
   "package.json",
   "main.cjs",
   "preload.cjs",
+  "skin-registry.js",
   "bubble.html",
   "bubble.css",
   "bubble.js",
@@ -35,9 +36,11 @@ $runtimeFiles = @(
   "drag-handle.js",
   "pet.html",
   "pet.css",
-  "pet.js",
-  "assets\icon.png",
-  "assets\pet-spritesheet.webp"
+  "pet.js"
+)
+$runtimeDirectories = @(
+  "assets",
+  "config-ui"
 )
 
 New-Item -ItemType Directory -Path $pluginsRoot -Force | Out-Null
@@ -56,6 +59,16 @@ foreach ($relativePath in $runtimeFiles) {
   $destinationDirectory = Split-Path -Parent $destinationPath
   New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
   Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
+}
+
+foreach ($relativePath in $runtimeDirectories) {
+  $sourceDirectory = Join-Path $projectRoot $relativePath
+  if (-not (Test-Path -LiteralPath $sourceDirectory -PathType Container)) {
+    throw "Missing runtime directory: $relativePath"
+  }
+
+  $destinationDirectory = Join-Path $targetDirectory $relativePath
+  Copy-Item -LiteralPath $sourceDirectory -Destination $destinationDirectory -Recurse -Force
 }
 
 Write-Host "Plugin deployed: $targetDirectory"

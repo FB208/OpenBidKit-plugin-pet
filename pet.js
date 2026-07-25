@@ -15,6 +15,8 @@ const ANIMATIONS = Object.freeze({
 });
 
 const BLINK_INTERVAL_MS = 5_000;
+const DEFAULT_ATLAS_COLUMNS = 8;
+const DEFAULT_ATLAS_ROWS = 19;
 
 let animationFrameRequest = null;
 let blinkTimeout = null;
@@ -25,13 +27,43 @@ let movementActive = false;
 let greeted = false;
 let startupAnimationActive = false;
 let pointerOverPet = false;
+let atlasColumns = DEFAULT_ATLAS_COLUMNS;
+let atlasRows = DEFAULT_ATLAS_ROWS;
+let skinLoadId = 0;
+
+/** 预加载新图集，完成后原位替换且不重置当前动画。 */
+async function renderSkin(skin) {
+  const skinId = String(skin?.id || '');
+  const spriteSheet = String(skin?.spriteSheet || '');
+  if (!skinId || !spriteSheet) return;
+
+  const requestId = ++skinLoadId;
+  const spriteSheetUrl = new URL(spriteSheet, window.location.href).href;
+  const image = new Image();
+  image.src = spriteSheetUrl;
+
+  try {
+    await image.decode();
+  } catch (error) {
+    console.error('[openbidkit-pet] 皮肤图集加载失败:', error);
+    return;
+  }
+
+  if (requestId !== skinLoadId) return;
+  atlasColumns = Number(skin.atlas?.columns) || DEFAULT_ATLAS_COLUMNS;
+  atlasRows = Number(skin.atlas?.rows) || DEFAULT_ATLAS_ROWS;
+  spriteElement.style.backgroundImage = `url("${spriteSheetUrl}")`;
+  spriteElement.style.backgroundSize = `${atlasColumns * 100}% ${atlasRows * 100}%`;
+  spriteElement.dataset.skinId = skinId;
+  window.petSkin.notifyReady(skinId);
+}
 
 /** 将指定动画帧定位到精灵图中的对应单元格。 */
 function renderFrame(animation, frameIndex) {
-  const column = frameIndex % 8;
-  const row = animation.startRow + Math.floor(frameIndex / 8);
-  const x = (column * 100) / 7;
-  const y = (row * 100) / 18;
+  const column = frameIndex % atlasColumns;
+  const row = animation.startRow + Math.floor(frameIndex / atlasColumns);
+  const x = (column * 100) / (atlasColumns - 1);
+  const y = (row * 100) / (atlasRows - 1);
   spriteElement.style.backgroundPosition = `${x}% ${y}%`;
 }
 
@@ -240,11 +272,16 @@ function renderHover(hovered) {
 const unsubscribeStatus = window.petStatus.onChange(renderStatus);
 const unsubscribeMotion = window.petStatus.onMotion(renderMotion);
 const unsubscribeHover = window.petStatus.onHover(renderHover);
+const unsubscribeSkin = window.petSkin.onChange((skin) => {
+  void renderSkin(skin);
+});
 
 window.addEventListener('beforeunload', () => {
+  skinLoadId += 1;
   stopAnimation();
   unsubscribeStatus();
   unsubscribeMotion();
   unsubscribeHover();
+  unsubscribeSkin();
 });
 })();

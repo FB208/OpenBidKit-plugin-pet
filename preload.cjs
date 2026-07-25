@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const STATUS_CHANNEL = 'plugin:openbidkit-pet:status';
 const MOTION_CHANNEL = 'plugin:openbidkit-pet:motion';
+const SKIN_CHANNEL = 'plugin:openbidkit-pet:skin';
+const SKIN_READY_CHANNEL = 'plugin:openbidkit-pet:skin-ready';
 const HOVER_CHANNEL = 'plugin:openbidkit-pet:hover';
 const DRAG_START_CHANNEL = 'plugin:openbidkit-pet:drag-start';
 const DRAG_MOVE_CHANNEL = 'plugin:openbidkit-pet:drag-move';
@@ -38,6 +40,23 @@ contextBridge.exposeInMainWorld('petStatus', {
     const listener = (_event, hovered) => callback(hovered);
     ipcRenderer.on(HOVER_CHANNEL, listener);
     return () => ipcRenderer.removeListener(HOVER_CHANNEL, listener);
+  },
+});
+
+contextBridge.exposeInMainWorld('petSkin', {
+  /** 订阅皮肤变化，并返回取消订阅函数。 */
+  onChange(callback) {
+    if (typeof callback !== 'function') {
+      throw new TypeError('petSkin.onChange callback must be a function');
+    }
+    const listener = (_event, skin) => callback(skin);
+    ipcRenderer.on(SKIN_CHANNEL, listener);
+    return () => ipcRenderer.removeListener(SKIN_CHANNEL, listener);
+  },
+
+  /** 告知主进程指定皮肤已完成解码并可安全显示。 */
+  notifyReady(skinId) {
+    ipcRenderer.send(SKIN_READY_CHANNEL, skinId);
   },
 });
 
