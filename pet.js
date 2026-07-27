@@ -12,11 +12,16 @@ const ANIMATIONS = Object.freeze({
   waiting: { startRow: 13, frames: 16, keyframeMs: 80 },
   running: { startRow: 15, frames: 16, keyframeMs: 60 },
   review: { startRow: 17, frames: 16, keyframeMs: 80 },
+  'walking-right': { startRow: 19, frames: 16, keyframeMs: 90 },
+  'walking-left': { startRow: 21, frames: 16, keyframeMs: 90 },
+  'climbing-up': { startRow: 23, frames: 16, keyframeMs: 80 },
+  'climbing-down': { startRow: 25, frames: 16, keyframeMs: 80 },
+  'hanging-right': { startRow: 27, frames: 16, keyframeMs: 90 },
 });
 
 const BLINK_INTERVAL_MS = 5_000;
 const DEFAULT_ATLAS_COLUMNS = 8;
-const DEFAULT_ATLAS_ROWS = 19;
+const DEFAULT_ATLAS_ROWS = 29;
 
 let animationFrameRequest = null;
 let blinkTimeout = null;
@@ -247,7 +252,11 @@ function renderMotion(motion) {
   if (motion?.active) {
     startupAnimationActive = false;
     movementActive = true;
-    playAnimation(motion.direction === 'left' ? 'running-left' : 'running-right');
+    const requestedAnimation = String(motion.animation || '');
+    const animationName = ANIMATIONS[requestedAnimation]
+      ? requestedAnimation
+      : (motion.direction === 'left' ? 'running-left' : 'running-right');
+    playAnimation(animationName);
     return;
   }
 

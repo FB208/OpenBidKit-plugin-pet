@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the plugin atlas from generated 8-frame phase strips."""
+"""Build the plugin atlas from generated phase strips, seamless cycle strips, or 4×4 action grids."""
 
 from __future__ import annotations
 
@@ -20,8 +20,15 @@ CHROMA_SOFT_START = 32.0
 CHROMA_OPAQUE_DISTANCE = 280.0
 GROUND_BASELINE = 202
 CENTER_X = 95.5
+CENTER_Y = 103.5
+EDGE_PADDING = 4
+LEFT_EDGE_STATES = {"climbing-up"}
+RIGHT_EDGE_STATES = {"climbing-down"}
+TOP_EDGE_STATES = {"hanging-right"}
 MAX_SPRITE_WIDTH = 182
 MAX_SPRITE_HEIGHT = 198
+STABLE_CYCLE_UNIQUE_FRAMES = 8
+STABLE_CYCLE_STATES = {"walking-right", "climbing-up", "climbing-down"}
 
 STATE_ORDER = [
     "idle",
@@ -33,6 +40,11 @@ STATE_ORDER = [
     "waiting",
     "running",
     "review",
+    "walking-right",
+    "walking-left",
+    "climbing-up",
+    "climbing-down",
+    "hanging-right",
 ]
 GENERATED_STATES = [state for state in STATE_ORDER if state != "running-left"]
 STATE_FRAME_COUNTS = {state: (24 if state == "idle" else FRAMES_PER_STATE) for state in STATE_ORDER}
@@ -54,6 +66,11 @@ FRAME_DURATIONS_MS = {
     "waiting": 80,
     "running": 60,
     "review": 80,
+    "walking-right": 90,
+    "walking-left": 90,
+    "climbing-up": 80,
+    "climbing-down": 80,
+    "hanging-right": 90,
 }
 JUMP_BASELINES = [202, 201, 199, 197, 195, 193, 191, 189, 189, 191, 193, 195, 197, 199, 201, 202]
 IMAGE_SUFFIXES = {".png", ".webp", ".jpg", ".jpeg"}
@@ -270,6 +287,152 @@ def extract_phase_strip(path: Path) -> list[Image.Image]:
     except ValueError:
         return split_strip_at_vertical_valleys(transparent, 8)
 
+def extract_stable_cycle_frames(path: Path, state: str, frame_count: int) -> list[Image.Image]:
+    """用八帧共用的裁剪框、缩放比例和锚点构建稳定循环。"""
+    with Image.open(path) as opened:
+        transparent = remove_chroma_background(opened)
+
+    slots: list[Image.Image] = []
+    pose_boxes: list[tuple[int, int, int, int]] = []
+    for index in range(STABLE_CYCLE_UNIQUE_FRAMES):
+        slot_left = round(index * transparent.width / STABLE_CYCLE_UNIQUE_FRAMES)
+        slot_right = round((index + 1) * transparent.width / STABLE_CYCLE_UNIQUE_FRAMES)
+        slot = transparent.crop((slot_left, 0, slot_right, transparent.height))
+        cleaned_slot = keep_components_in_place(slot, select_pose_components(slot))
+        pose_box = cleaned_slot.getbbox()
+        if pose_box is None:
+            raise ValueError(f"{state} cycle slot {index:02d} is empty")
+        slots.append(cleaned_slot)
+        pose_boxes.append(pose_box)
+
+    padding = 4
+    common_box = (
+        max(0, min(box[0] for box in pose_boxes) - padding),
+        max(0, min(box[1] for box in pose_boxes) - padding),
+        min(slots[0].width, max(box[2] for box in pose_boxes) + padding),
+        min(slots[0].height, max(box[3] for box in pose_boxes) + padding),
+    )
+    common_width = common_box[2] - common_box[0]
+    common_height = common_box[3] - common_box[1]
+    scale = min(MAX_SPRITE_WIDTH / common_width, MAX_SPRITE_HEIGHT / common_height)
+    canvas_width = max(1, round(common_width * scale))
+    canvas_height = max(1, round(common_height * scale))
+
+    cycle_frames: list[Image.Image] = []
+    for slot in slots:
+        canvas = slot.crop(common_box).resize(
+            (canvas_width, canvas_height),
+            Image.Resampling.LANCZOS,
+        )
+        if state in LEFT_EDGE_STATES:
+            left = EDGE_PADDING
+            top = round((CELL_HEIGHT - canvas_height) / 2)
+        elif state in RIGHT_EDGE_STATES:
+            left = CELL_WIDTH - EDGE_PADDING - canvas_width
+            top = round((CELL_HEIGHT - canvas_height) / 2)
+        elif state in TOP_EDGE_STATES:
+            left = round((CELL_WIDTH - canvas_width) / 2)
+            top = EDGE_PADDING
+        else:
+            left = round((CELL_WIDTH - canvas_width) / 2)
+            top = GROUND_BASELINE - canvas_height + 1
+        if left < 0 or top < 0 or left + canvas_width > CELL_WIDTH or top + canvas_height > CELL_HEIGHT:
+            raise ValueError(f"{state} stable cycle canvas exceeds the cell")
+        cell = Image.new("RGBA", (CELL_WIDTH, CELL_HEIGHT), (0, 0, 0, 0))
+        cell.alpha_composite(canvas, (left, top))
+        cycle_frames.append(clear_transparent_rgb(cell))
+
+    if frame_count % len(cycle_frames) != 0:
+        raise ValueError(
+            f"cycle frame count {len(cycle_frames)} cannot evenly fill {frame_count} frames"
+        )
+    return [
+        cycle_frames[index % len(cycle_frames)].copy()
+        for index in range(frame_count)
+    ]
+
+def select_pose_components(image: Image.Image) -> list[dict[str, object]]:
+    """保留主体及邻近身份组件，排除从相邻格切入的边缘碎片。"""
+    components = connected_components(image)
+    if not components:
+        raise ValueError("frame contains no foreground components")
+
+    main_component = max(components, key=lambda item: int(item["area"]))
+    main_bbox = main_component["bbox"]
+    main_area = int(main_component["area"])
+    minimum_area = max(8, round(main_area * 0.0004))
+    main_width = int(main_bbox[2]) - int(main_bbox[0])
+    main_height = int(main_bbox[3]) - int(main_bbox[1])
+    proximity_limit = max(10, round(min(main_width, main_height) * 0.12))
+    selected = [main_component]
+
+    for component in components:
+        if component is main_component or int(component["area"]) < minimum_area:
+            continue
+        bbox = component["bbox"]
+        touches_slot_edge = (
+            int(bbox[0]) <= 1
+            or int(bbox[1]) <= 1
+            or int(bbox[2]) >= image.width - 1
+            or int(bbox[3]) >= image.height - 1
+        )
+        if touches_slot_edge:
+            continue
+        horizontal_gap = max(int(main_bbox[0]) - int(bbox[2]), int(bbox[0]) - int(main_bbox[2]), 0)
+        vertical_gap = max(int(main_bbox[1]) - int(bbox[3]), int(bbox[1]) - int(main_bbox[3]), 0)
+        if horizontal_gap <= proximity_limit and vertical_gap <= proximity_limit:
+            selected.append(component)
+    return selected
+
+
+def keep_components_in_place(
+    image: Image.Image,
+    components: list[dict[str, object]],
+) -> Image.Image:
+    """按原坐标复制选中的连通组件。"""
+    source = image.convert("RGBA")
+    output = Image.new("RGBA", source.size, (0, 0, 0, 0))
+    source_pixels = source.load()
+    output_pixels = output.load()
+    for component in components:
+        for pixel_index in component["pixels"]:
+            x = int(pixel_index) % source.width
+            y = int(pixel_index) // source.width
+            output_pixels[x, y] = source_pixels[x, y]
+    return clear_transparent_rgb(output)
+
+
+def remove_cross_slot_fragments(image: Image.Image) -> Image.Image:
+    """移除动作格边缘处不属于当前角色的跨格碎片。"""
+    return keep_components_in_place(image, select_pose_components(image))
+
+
+def extract_contact_grid(path: Path, columns: int = 4, rows: int = 4) -> list[Image.Image]:
+    """从四乘四动作联系图按阅读顺序提取十六个姿态。"""
+    with Image.open(path) as opened:
+        transparent = remove_chroma_background(opened)
+    frames: list[Image.Image] = []
+    for row in range(rows):
+        top = round(row * transparent.height / rows)
+        bottom = round((row + 1) * transparent.height / rows)
+        for column in range(columns):
+            left = round(column * transparent.width / columns)
+            right = round((column + 1) * transparent.width / columns)
+            slot = transparent.crop((left, top, right, bottom))
+            cleaned_slot = remove_cross_slot_fragments(slot)
+            bbox = cleaned_slot.getbbox()
+            if bbox is None:
+                raise ValueError(f"contact grid slot {row * columns + column + 1} is empty")
+            padding = 3
+            crop_box = (
+                max(0, bbox[0] - padding),
+                max(0, bbox[1] - padding),
+                min(cleaned_slot.width, bbox[2] + padding),
+                min(cleaned_slot.height, bbox[3] + padding),
+            )
+            frames.append(cleaned_slot.crop(crop_box))
+    return frames
+
 
 def alpha_area(image: Image.Image) -> int:
     """统计有效角色像素数量。"""
@@ -294,6 +457,19 @@ def resize_by_scale(image: Image.Image, scale: float) -> Image.Image:
     width = max(1, round(image.width * scale))
     height = max(1, round(image.height * scale))
     return image.resize((width, height), Image.Resampling.LANCZOS)
+
+
+def alpha_centroid_y(image: Image.Image) -> float:
+    """计算透明度加权的垂直视觉质心。"""
+    alpha = image.getchannel("A")
+    total = 0
+    weighted = 0
+    for y in range(alpha.height):
+        for x in range(alpha.width):
+            value = alpha.getpixel((x, y))
+            total += value
+            weighted += y * value
+    return weighted / total if total else image.height / 2
 
 
 def normalize_state_frames(state: str, frames: list[Image.Image]) -> list[Image.Image]:
@@ -322,10 +498,23 @@ def normalize_state_frames(state: str, frames: list[Image.Image]) -> list[Image.
         if bbox is None:
             raise ValueError(f"{state} frame {index:02d} is empty after extraction")
         sprite = frame.crop(bbox)
-        baseline = JUMP_BASELINES[index] if state == "jumping" else GROUND_BASELINE
         centroid_x = alpha_centroid_x(sprite)
-        left = round(CENTER_X - centroid_x)
-        top = baseline - sprite.height + 1
+        centroid_y = alpha_centroid_y(sprite)
+        if state in LEFT_EDGE_STATES:
+            left = EDGE_PADDING
+            top = round(CENTER_Y - centroid_y)
+        elif state in RIGHT_EDGE_STATES:
+            left = CELL_WIDTH - sprite.width - EDGE_PADDING
+            top = round(CENTER_Y - centroid_y)
+        elif state in TOP_EDGE_STATES:
+            left = round(CENTER_X - centroid_x)
+            top = EDGE_PADDING
+        else:
+            baseline = JUMP_BASELINES[index] if state == "jumping" else GROUND_BASELINE
+            left = round(CENTER_X - centroid_x)
+            top = baseline - sprite.height + 1
+        left = max(0, min(left, CELL_WIDTH - sprite.width))
+        top = max(0, min(top, CELL_HEIGHT - sprite.height))
         if left < 0 or left + sprite.width > CELL_WIDTH or top < 0 or top + sprite.height > CELL_HEIGHT:
             raise ValueError(
                 f"{state} frame {index:02d} exceeds cell after normalization: "
@@ -356,6 +545,36 @@ def clear_transparent_rgb(image: Image.Image) -> Image.Image:
 def mirror_frames(frames: list[Image.Image]) -> list[Image.Image]:
     """逐帧镜像右向步态，保留原时间顺序。"""
     return [ImageOps.mirror(frame) for frame in frames]
+
+
+def load_existing_atlas_frames(path: Path) -> dict[str, list[Image.Image]]:
+    """从现有正式图集读取仍需原样保留的动作帧。"""
+    with Image.open(path) as opened:
+        atlas = opened.convert("RGBA")
+    if atlas.width != COLUMNS * CELL_WIDTH or atlas.height % CELL_HEIGHT != 0:
+        raise ValueError(f"现有图集尺寸不符合 {COLUMNS} 列、{CELL_WIDTH}×{CELL_HEIGHT} 单帧约定")
+
+    available_rows = atlas.height // CELL_HEIGHT
+    all_frames: dict[str, list[Image.Image]] = {}
+    for state in STATE_ORDER:
+        frame_count = STATE_FRAME_COUNTS[state]
+        start_row = STATE_START_ROWS[state]
+        required_rows = math.ceil(frame_count / COLUMNS)
+        if start_row + required_rows > available_rows:
+            continue
+        frames: list[Image.Image] = []
+        for frame_index in range(frame_count):
+            column = frame_index % COLUMNS
+            row = start_row + frame_index // COLUMNS
+            box = (
+                column * CELL_WIDTH,
+                row * CELL_HEIGHT,
+                (column + 1) * CELL_WIDTH,
+                (row + 1) * CELL_HEIGHT,
+            )
+            frames.append(clear_transparent_rgb(atlas.crop(box)))
+        all_frames[state] = frames
+    return all_frames
 
 
 def frame_metrics(image: Image.Image, index: int) -> dict[str, object]:
@@ -389,7 +608,7 @@ def frame_metrics(image: Image.Image, index: int) -> dict[str, object]:
 
 
 def validate_geometry(all_frames: dict[str, list[Image.Image]]) -> list[str]:
-    """检查体量、水平视觉中心和脚底基线是否达到连续播放标准。"""
+    """按地面、侧边和顶部动作各自的对齐方式检查帧几何。"""
     errors: list[str] = []
     for state, frames in all_frames.items():
         metrics = [frame_metrics(frame, index) for index, frame in enumerate(frames)]
@@ -400,18 +619,65 @@ def validate_geometry(all_frames: dict[str, list[Image.Image]]) -> list[str]:
         average_area = sum(areas) / len(areas)
         area_delta = (max(areas) - min(areas)) / average_area
         # 失败姿态会逐步蜷缩并遮挡四肢，面积变化属于动作语义；其体型改由逐帧视觉检查确认。
-        area_limit = 0.25 if state == "failed" else 0.05
+        if state == "failed":
+            area_limit = 0.25
+        elif state in STABLE_CYCLE_STATES:
+            area_limit = 0.10
+        else:
+            area_limit = 0.05
         if area_delta > area_limit:
             errors.append(
                 f"{state}: alpha-area variation {area_delta:.1%} exceeds {area_limit:.0%}"
             )
-        centers = [float(metric["centroid_x"]) for metric in metrics]
-        if max(centers) - min(centers) > 1.5:
-            errors.append(f"{state}: horizontal visual-center variation exceeds 1.5px")
-        baselines = [int(metric["baseline"]) for metric in metrics]
-        expected = JUMP_BASELINES if state == "jumping" else [GROUND_BASELINE] * len(frames)
-        if baselines != expected:
-            errors.append(f"{state}: baseline sequence does not match the geometry contract")
+        if state in STABLE_CYCLE_STATES:
+            if len(frames) % STABLE_CYCLE_UNIQUE_FRAMES != 0:
+                errors.append(f"{state}: stable cycle does not fill the formal frame count")
+            elif any(
+                frames[index].tobytes() != frames[index + STABLE_CYCLE_UNIQUE_FRAMES].tobytes()
+                for index in range(STABLE_CYCLE_UNIQUE_FRAMES)
+            ):
+                errors.append(f"{state}: repeated cycle frames are not pixel-identical")
+            boxes = [metric["bbox"] for metric in metrics]
+            if any(
+                int(box[0]) <= 0
+                or int(box[1]) <= 0
+                or int(box[2]) >= CELL_WIDTH
+                or int(box[3]) >= CELL_HEIGHT
+                for box in boxes
+            ):
+                errors.append(f"{state}: sprite content touches a cell boundary")
+            if state == "walking-right":
+                baselines = [int(metric["baseline"]) for metric in metrics]
+                if max(baselines) - min(baselines) > 2:
+                    errors.append(f"{state}: foot-baseline variation exceeds 2px")
+            continue
+        if state in LEFT_EDGE_STATES:
+            left_edges = [int(metric["bbox"][0]) for metric in metrics]
+            vertical_centers = [float(metric["centroid_y"]) for metric in metrics]
+            if left_edges != [EDGE_PADDING] * len(frames):
+                errors.append(f"{state}: left-edge alignment does not match the geometry contract")
+            if max(vertical_centers) - min(vertical_centers) > 1.5:
+                errors.append(f"{state}: vertical visual-center variation exceeds 1.5px")
+        elif state in RIGHT_EDGE_STATES:
+            right_edges = [int(metric["bbox"][2]) for metric in metrics]
+            vertical_centers = [float(metric["centroid_y"]) for metric in metrics]
+            if right_edges != [CELL_WIDTH - EDGE_PADDING] * len(frames):
+                errors.append(f"{state}: right-edge alignment does not match the geometry contract")
+            if max(vertical_centers) - min(vertical_centers) > 1.5:
+                errors.append(f"{state}: vertical visual-center variation exceeds 1.5px")
+        else:
+            centers = [float(metric["centroid_x"]) for metric in metrics]
+            if max(centers) - min(centers) > 1.5:
+                errors.append(f"{state}: horizontal visual-center variation exceeds 1.5px")
+            if state in TOP_EDGE_STATES:
+                top_edges = [int(metric["bbox"][1]) for metric in metrics]
+                if top_edges != [EDGE_PADDING] * len(frames):
+                    errors.append(f"{state}: top-edge alignment does not match the geometry contract")
+            else:
+                baselines = [int(metric["baseline"]) for metric in metrics]
+                expected = JUMP_BASELINES if state == "jumping" else [GROUND_BASELINE] * len(frames)
+                if baselines != expected:
+                    errors.append(f"{state}: baseline sequence does not match the geometry contract")
     return errors
 
 def write_frames(frames_root: Path, state: str, frames: list[Image.Image]) -> None:
@@ -435,7 +701,6 @@ def compose_atlas(all_frames: dict[str, list[Image.Image]]) -> Image.Image:
             column = frame_index % COLUMNS
             atlas.alpha_composite(frame, (column * CELL_WIDTH, row * CELL_HEIGHT))
     return clear_transparent_rgb(atlas)
-
 
 def checkerboard(size: tuple[int, int], square: int = 12) -> Image.Image:
     """创建用于视觉复核透明边缘的棋盘背景。"""
@@ -559,14 +824,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--states", default="all", help="Comma-separated generated states for checkpoint builds.")
+    parser.add_argument("--base-atlas", type=Path, help="需要原样保留旧动作的现有正式图集。")
+    parser.add_argument("--skip-qa", action="store_true", help="仅合成成稿，不生成检查材料。")
     args = parser.parse_args()
-
     run_dir = Path(args.run_dir).expanduser().resolve()
     decoded_dir = run_dir / "decoded"
     frames_root = run_dir / "frames"
     final_dir = run_dir / "final"
     qa_dir = run_dir / "qa"
-    all_frames: dict[str, list[Image.Image]] = {}
+    all_frames: dict[str, list[Image.Image]] = (
+        load_existing_atlas_frames(args.base_atlas.expanduser().resolve()) if args.base_atlas else {}
+    )
     selected_states = GENERATED_STATES if args.states == "all" else [
         item.strip() for item in args.states.split(",") if item.strip()
     ]
@@ -575,29 +843,41 @@ def main() -> None:
         raise SystemExit(f"unknown generated states: {', '.join(unknown_states)}")
 
     for state in selected_states:
-        phase_paths = [
-            decoded_dir / f"{state}-{suffix}.png"
-            for suffix in STATE_PHASES[state]
-        ]
-        missing_phases = [path for path in phase_paths if not path.is_file()]
-        if missing_phases:
-            raise SystemExit(
-                f"missing generated phase strips for {state}: "
-                + ", ".join(str(path) for path in missing_phases)
+        cycle_path = decoded_dir / f"{state}-cycle.png"
+        contact_grid_path = decoded_dir / f"{state}.png"
+        if cycle_path.is_file():
+            all_frames[state] = extract_stable_cycle_frames(
+                cycle_path,
+                state,
+                STATE_FRAME_COUNTS[state],
             )
-        raw_frames: list[Image.Image] = []
-        for phase_path in phase_paths:
-            raw_frames.extend(extract_phase_strip(phase_path))
+            continue
+        elif contact_grid_path.is_file():
+            raw_frames = extract_contact_grid(contact_grid_path)
+        else:
+            phase_paths = [
+                decoded_dir / f"{state}-{suffix}.png"
+                for suffix in STATE_PHASES[state]
+            ]
+            missing_phases = [path for path in phase_paths if not path.is_file()]
+            if missing_phases:
+                raise SystemExit(
+                    f"缺少 {state} 的八帧循环条带、4×4联系图或八帧分段图："
+                    + ", ".join(str(path) for path in missing_phases)
+                )
+            raw_frames = []
+            for phase_path in phase_paths:
+                raw_frames.extend(extract_phase_strip(phase_path))
         all_frames[state] = normalize_state_frames(state, raw_frames)
 
-    if "running-right" in all_frames:
+    if "running-right" in selected_states:
         all_frames["running-left"] = mirror_frames(all_frames["running-right"])
 
     for state in STATE_ORDER:
         if state in all_frames:
             write_frames(frames_root, state, all_frames[state])
 
-    checkpoint_only = set(selected_states) != set(GENERATED_STATES)
+    checkpoint_only = any(state not in all_frames for state in STATE_ORDER)
     atlas = None if checkpoint_only else compose_atlas(all_frames)
     final_dir.mkdir(parents=True, exist_ok=True)
     if atlas is not None:
@@ -611,10 +891,19 @@ def main() -> None:
             exact=True,
         )
 
-    geometry_errors = validate_geometry(all_frames)
+    validation_state_names = set(selected_states)
+    if "running-right" in validation_state_names:
+        validation_state_names.add("running-left")
+    validation_frames = {
+        state: all_frames[state]
+        for state in validation_state_names
+        if state in all_frames
+    }
+    geometry_errors = [] if args.skip_qa else validate_geometry(validation_frames)
     geometry = {
         "ok": not geometry_errors,
         "errors": geometry_errors,
+        "validated_states": sorted(validation_frames),
         "atlas": {
             "columns": COLUMNS,
             "rows": ATLAS_ROWS,
@@ -629,24 +918,25 @@ def main() -> None:
             if state in all_frames
         },
     }
-    qa_dir.mkdir(parents=True, exist_ok=True)
-    geometry_name = "geometry.json" if not checkpoint_only else "geometry-checkpoint.json"
-    (qa_dir / geometry_name).write_text(
-        json.dumps(geometry, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    contact_name = "contact-sheet-hd.png" if not checkpoint_only else "contact-sheet-checkpoint.png"
-    onion_name = "onion-sheet-hd.png" if not checkpoint_only else "onion-sheet-checkpoint.png"
-    make_contact_sheet(all_frames, qa_dir / contact_name)
-    if not checkpoint_only:
-        make_contact_sheet(
-            all_frames,
-            qa_dir / "contact-sheet-dark.png",
-            dark_background=True,
+    if not args.skip_qa:
+        qa_dir.mkdir(parents=True, exist_ok=True)
+        geometry_name = "geometry.json" if not checkpoint_only else "geometry-checkpoint.json"
+        (qa_dir / geometry_name).write_text(
+            json.dumps(geometry, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
         )
-    make_onion_sheet(all_frames, qa_dir / onion_name)
-    save_state_qa_sheets(all_frames, qa_dir / "state-sheets")
-    save_previews(all_frames, qa_dir / "previews")
+        contact_name = "contact-sheet-hd.png" if not checkpoint_only else "contact-sheet-checkpoint.png"
+        onion_name = "onion-sheet-hd.png" if not checkpoint_only else "onion-sheet-checkpoint.png"
+        make_contact_sheet(all_frames, qa_dir / contact_name)
+        if not checkpoint_only:
+            make_contact_sheet(
+                all_frames,
+                qa_dir / "contact-sheet-dark.png",
+                dark_background=True,
+            )
+        make_onion_sheet(all_frames, qa_dir / onion_name)
+        save_state_qa_sheets(all_frames, qa_dir / "state-sheets")
+        save_previews(all_frames, qa_dir / "previews")
 
     metadata = {
         "columns": COLUMNS,
@@ -665,7 +955,7 @@ def main() -> None:
     print(
         json.dumps(
             {
-                "ok": True,
+                "ok": not geometry_errors,
                 "run_dir": str(run_dir),
                 "checkpoint_only": checkpoint_only,
                 "atlas": str(final_dir / "spritesheet-hd.webp") if not checkpoint_only else None,
@@ -674,6 +964,9 @@ def main() -> None:
         )
     )
 
+
+    if geometry_errors and not args.skip_qa:
+        raise SystemExit(1)
 
 if __name__ == "__main__":
     main()

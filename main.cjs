@@ -27,6 +27,10 @@ const BUBBLE_EDGE_MARGIN = 8;
 const WINDOW_MARGIN = 24;
 const POSITION_SAVE_DELAY_MS = 200;
 const DRAG_MOVEMENT_THRESHOLD = 2;
+const EDGE_PATROL_IDLE_DELAY_MS = 10_000;
+const EDGE_PATROL_FRAME_INTERVAL_MS = 16;
+const EDGE_PATROL_SPEED_PX_PER_SECOND = 72;
+const EDGE_PATROL_MAX_ELAPSED_MS = 120;
 
 const TASK_LABELS = Object.freeze({
   'bid-section-extraction': '多标段识别',
@@ -54,6 +58,9 @@ const runtime = {
   terminalTimer: null,
   positionTimer: null,
   dragState: null,
+  edgePatrolDelayTimer: null,
+  edgePatrolFrameTimer: null,
+  edgePatrolState: null,
   dragIpcRegistered: false,
   dragPreviewRendererReady: false,
   latestSkin: null,
@@ -209,6 +216,11 @@ function publishStatus(status) {
   if (runtime.dragPreviewRendererReady) {
     sendToWindow(runtime.dragPreviewWindow, STATUS_CHANNEL, status);
   }
+  if (status?.tone === 'idle') {
+    scheduleEdgePatrol();
+  } else {
+    stopEdgePatrol();
+  }
 }
 
 /** 向唯一视觉层发送当前皮肤。 */
@@ -227,8 +239,14 @@ function publishMotion(motion) {
 /** 向唯一视觉层发送鼠标悬停状态。 */
 function publishHover(hovered) {
   runtime.latestHovered = Boolean(hovered);
-  if (!runtime.dragPreviewRendererReady) return;
-  sendToWindow(runtime.dragPreviewWindow, HOVER_CHANNEL, runtime.latestHovered);
+  if (runtime.dragPreviewRendererReady) {
+    sendToWindow(runtime.dragPreviewWindow, HOVER_CHANNEL, runtime.latestHovered);
+  }
+  if (runtime.latestHovered) {
+    stopEdgePatrol();
+  } else {
+    scheduleEdgePatrol();
+  }
 }
 /** 显示当前活动任务；没有任务时显示空闲。 */
 function publishLatestActiveOrIdle(excludedTaskId = null) {
@@ -294,6 +312,195 @@ function clamp(value, minimum, maximum) {
   return Math.min(Math.max(value, minimum), maximum);
 }
 
+/** 判断当前是否满足十秒待命巡边条件。 */
+function canStartEdgePatrol() {
+  const win = runtime.petWindow;
+  return Boolean(
+    runtime.latestStatus?.tone === 'idle'
+    && !runtime.dragState
+    && !runtime.latestHovered
+    && win
+    && !win.isDestroyed()
+  );
+}
+
+/** 清理巡边启动倒计时。 */
+function clearEdgePatrolDelay() {
+  if (runtime.edgePatrolDelayTimer) {
+    clearTimeout(runtime.edgePatrolDelayTimer);
+    runtime.edgePatrolDelayTimer = null;
+  }
+}
+
+/** 按角色可见区域计算当前显示器的巡边坐标。 */
+function getEdgePatrolTravelBounds(workArea) {
+  return {
+    left: workArea.x - PET_SPRITE_INSET_X,
+    top: workArea.y - PET_SPRITE_INSET_Y,
+    right: workArea.x + workArea.width - PET_SPRITE_INSET_X - PET_SPRITE_WIDTH,
+    bottom: workArea.y + workArea.height - PET_SPRITE_INSET_Y - PET_SPRITE_HEIGHT,
+  };
+}
+
+/** 读取巡边阶段对应的终点坐标。 */
+function getEdgePatrolTarget(segment, state) {
+  const { bounds } = state;
+  if (segment === 'approach-left') return { x: bounds.left, y: state.y };
+  if (segment === 'approach-right') return { x: bounds.right, y: state.y };
+  if (segment === 'left') return { x: bounds.left, y: bounds.top };
+  if (segment === 'top') return { x: bounds.right, y: bounds.top };
+  if (segment === 'right') return { x: bounds.right, y: bounds.bottom };
+  return { x: bounds.left, y: bounds.bottom };
+}
+
+/** 按顺时针方向切换到下一条屏幕边。 */
+function getNextEdgePatrolSegment(segment) {
+  if (segment === 'approach-left') return 'left';
+  if (segment === 'approach-right') return 'right';
+  if (segment === 'left') return 'top';
+  if (segment === 'top') return 'right';
+  if (segment === 'right') return 'bottom';
+  return 'left';
+}
+
+/** 读取巡边阶段对应的角色动作。 */
+function getEdgePatrolAnimation(segment) {
+  if (segment === 'approach-left') return 'walking-left';
+  if (segment === 'approach-right') return 'walking-right';
+  if (segment === 'left') return 'climbing-up';
+  if (segment === 'top') return 'hanging-right';
+  if (segment === 'right') return 'climbing-down';
+  return 'walking-left';
+}
+
+/** 激活巡边阶段并同步对应动作。 */
+function activateEdgePatrolSegment(segment) {
+  const state = runtime.edgePatrolState;
+  if (!state) return;
+  state.segment = segment;
+  state.target = getEdgePatrolTarget(segment, state);
+  const animation = getEdgePatrolAnimation(segment);
+  if (state.animation === animation) return;
+  state.animation = animation;
+  publishMotion({
+    active: true,
+    animation,
+    source: 'edge-patrol',
+  });
+}
+
+/** 移动巡边输入窗口并同步唯一视觉层。 */
+function moveEdgePatrolWindow(x, y) {
+  const win = runtime.petWindow;
+  if (!win || win.isDestroyed()) return;
+  const roundedX = Math.round(x);
+  const roundedY = Math.round(y);
+  const [currentX, currentY] = win.getPosition();
+  if (currentX !== roundedX || currentY !== roundedY) {
+    win.setPosition(roundedX, roundedY);
+  }
+  showDragPreview(roundedX, roundedY);
+}
+
+/** 按真实经过时间推进一次顺时针巡边。 */
+function advanceEdgePatrol() {
+  const state = runtime.edgePatrolState;
+  if (!state) return;
+  if (!canStartEdgePatrol()) {
+    stopEdgePatrol();
+    return;
+  }
+
+  const now = Date.now();
+  const elapsedMs = Math.min(EDGE_PATROL_MAX_ELAPSED_MS, Math.max(0, now - state.lastTickAt));
+  state.lastTickAt = now;
+  let remainingDistance = EDGE_PATROL_SPEED_PX_PER_SECOND * elapsedMs / 1000;
+  let transitionCount = 0;
+
+  while (remainingDistance > 0 && transitionCount < 8) {
+    const deltaX = state.target.x - state.x;
+    const deltaY = state.target.y - state.y;
+    const distance = Math.hypot(deltaX, deltaY);
+    if (distance <= 0.01) {
+      activateEdgePatrolSegment(getNextEdgePatrolSegment(state.segment));
+      transitionCount += 1;
+      continue;
+    }
+    if (distance <= remainingDistance) {
+      state.x = state.target.x;
+      state.y = state.target.y;
+      remainingDistance -= distance;
+      activateEdgePatrolSegment(getNextEdgePatrolSegment(state.segment));
+      transitionCount += 1;
+      continue;
+    }
+    const ratio = remainingDistance / distance;
+    state.x += deltaX * ratio;
+    state.y += deltaY * ratio;
+    remainingDistance = 0;
+  }
+
+  moveEdgePatrolWindow(state.x, state.y);
+}
+
+/** 从当前位置走向最近竖边并开始顺时针巡边。 */
+function startEdgePatrol() {
+  runtime.edgePatrolDelayTimer = null;
+  if (!canStartEdgePatrol() || runtime.edgePatrolState) return;
+  const win = runtime.petWindow;
+  const [windowX, windowY] = win.getPosition();
+  const { workArea } = screen.getDisplayMatching({
+    x: windowX,
+    y: windowY,
+    width: PET_WINDOW_WIDTH,
+    height: PET_WINDOW_HEIGHT,
+  });
+  const bounds = getEdgePatrolTravelBounds(workArea);
+  const x = clamp(windowX, bounds.left, bounds.right);
+  const y = clamp(windowY, bounds.top, bounds.bottom);
+  runtime.edgePatrolState = {
+    bounds,
+    x,
+    y,
+    segment: null,
+    target: null,
+    animation: null,
+    lastTickAt: Date.now(),
+  };
+  moveEdgePatrolWindow(x, y);
+  const leftDistance = Math.abs(x - bounds.left);
+  const rightDistance = Math.abs(bounds.right - x);
+  activateEdgePatrolSegment(leftDistance <= rightDistance ? 'approach-left' : 'approach-right');
+  runtime.edgePatrolFrameTimer = setInterval(advanceEdgePatrol, EDGE_PATROL_FRAME_INTERVAL_MS);
+}
+
+/** 停止巡边及倒计时，并恢复当前任务状态动作。 */
+function stopEdgePatrol(options = {}) {
+  clearEdgePatrolDelay();
+  if (runtime.edgePatrolFrameTimer) {
+    clearInterval(runtime.edgePatrolFrameTimer);
+    runtime.edgePatrolFrameTimer = null;
+  }
+  const wasActive = Boolean(runtime.edgePatrolState);
+  runtime.edgePatrolState = null;
+  if (!wasActive) return;
+  if (options.publishStopped !== false) {
+    publishMotion({
+      active: false,
+      direction: null,
+      source: 'edge-patrol',
+    });
+  }
+  schedulePositionSave();
+}
+
+/** 在持续空闲且无人交互十秒后启动巡边。 */
+function scheduleEdgePatrol() {
+  clearEdgePatrolDelay();
+  if (runtime.edgePatrolState || !canStartEdgePatrol()) return;
+  runtime.edgePatrolDelayTimer = setTimeout(startEdgePatrol, EDGE_PATROL_IDLE_DELAY_MS);
+}
+
 /** 计算指定桌宠坐标对应的状态气泡位置。 */
 function calculateBubbleWindowPosition(petBounds) {
   const { workArea } = screen.getDisplayMatching(petBounds);
@@ -339,7 +546,7 @@ function schedulePositionSave() {
 
 /** 输入窗口落位后同步固定画布位置并保存坐标。 */
 function handlePetWindowMove() {
-  schedulePositionSave();
+  if (!runtime.edgePatrolState) schedulePositionSave();
   if (runtime.dragState) return;
 
   const win = runtime.petWindow;
@@ -443,6 +650,7 @@ function handleDragStart(event) {
   const win = runtime.petWindow;
   if (!win || win.isDestroyed()) return;
 
+  stopEdgePatrol();
   const [windowX, windowY] = win.getPosition();
   runtime.dragState = {
     windowX,
@@ -480,6 +688,7 @@ function handleDragEnd(event, rawDelta) {
     }
   }
   if (state.moving) publishMotion({ active: false, direction: null });
+  scheduleEdgePatrol();
 }
 
 /** 指针捕获意外终止时将视觉层恢复到拖动起点。 */
@@ -489,6 +698,7 @@ function handleDragCancel(event) {
   runtime.dragState = null;
   showDragPreview(state.windowX, state.windowY);
   if (state.moving) publishMotion({ active: false, direction: null });
+  scheduleEdgePatrol();
 }
 
 /** 转发透明输入层的鼠标悬停状态。 */
@@ -630,6 +840,7 @@ function cleanupRuntime() {
   clearTerminalTimer();
   unregisterDragIpc();
   runtime.dragState = null;
+  stopEdgePatrol({ publishStopped: false });
 
   if (runtime.positionTimer) {
     clearTimeout(runtime.positionTimer);
