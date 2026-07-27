@@ -19,6 +19,8 @@ const PET_SPRITE_WIDTH = 132;
 const PET_SPRITE_HEIGHT = 143;
 const PET_SPRITE_INSET_X = Math.round((PET_WINDOW_WIDTH - PET_SPRITE_WIDTH) / 2);
 const PET_SPRITE_INSET_Y = Math.round((PET_WINDOW_HEIGHT - PET_SPRITE_HEIGHT) / 2);
+const VISUAL_WINDOW_OVERFLOW_X = Math.ceil(PET_WINDOW_WIDTH / 2);
+const VISUAL_WINDOW_OVERFLOW_Y = Math.ceil(PET_WINDOW_HEIGHT / 2);
 const BUBBLE_WINDOW_WIDTH = 420;
 const BUBBLE_WINDOW_HEIGHT = 136;
 const BUBBLE_WINDOW_GAP = 8;
@@ -31,6 +33,16 @@ const EDGE_PATROL_IDLE_DELAY_MS = 10_000;
 const EDGE_PATROL_FRAME_INTERVAL_MS = 16;
 const EDGE_PATROL_SPEED_PX_PER_SECOND = 40;
 const EDGE_PATROL_MAX_ELAPSED_MS = 120;
+const WINDOW_COORDINATE_MIN = -2_147_483_648;
+const WINDOW_COORDINATE_MAX = 2_147_483_647;
+const EDGE_PATROL_SEGMENTS = new Set([
+  'approach-left',
+  'approach-right',
+  'left',
+  'top',
+  'right',
+  'bottom',
+]);
 
 const TASK_LABELS = Object.freeze({
   'bid-section-extraction': '多标段识别',
@@ -61,8 +73,11 @@ const runtime = {
   edgePatrolDelayTimer: null,
   edgePatrolFrameTimer: null,
   edgePatrolState: null,
+  displayEventsRegistered: false,
   dragIpcRegistered: false,
   dragPreviewRendererReady: false,
+  dragPreviewDisplayId: null,
+  dragPreviewTargetBounds: null,
   latestSkin: null,
   latestStatus: createIdleStatus(),
   latestDragPreview: null,
@@ -194,19 +209,46 @@ function getConfiguredSkin(ctx) {
   return createSkinPresentation(skin);
 }
 
-/** 计算所有显示器共同覆盖的固定透明画布。 */
-function getVirtualDesktopBounds() {
+/** 计算所有显示器工作区共同组成的虚拟桌面巡边范围。 */
+function getVirtualDesktopWorkArea() {
   const displays = screen.getAllDisplays();
-  const left = Math.min(...displays.map(({ bounds }) => bounds.x));
-  const top = Math.min(...displays.map(({ bounds }) => bounds.y));
-  const right = Math.max(...displays.map(({ bounds }) => bounds.x + bounds.width));
-  const bottom = Math.max(...displays.map(({ bounds }) => bounds.y + bounds.height));
+  const left = Math.min(...displays.map(({ workArea }) => workArea.x));
+  const top = Math.min(...displays.map(({ workArea }) => workArea.y));
+  const right = Math.max(...displays.map(({ workArea }) => workArea.x + workArea.width));
+  const bottom = Math.max(...displays.map(({ workArea }) => workArea.y + workArea.height));
   return {
     x: left,
     y: top,
     width: right - left,
     height: bottom - top,
   };
+}
+
+/** 计算当前桌宠所在显示器对应的局部透明视觉画布。 */
+function getDragPreviewWindowLayout(petBounds) {
+  const display = screen.getDisplayMatching(petBounds);
+  const { bounds } = display;
+  return {
+    displayId: display.id,
+    bounds: {
+      x: bounds.x - VISUAL_WINDOW_OVERFLOW_X,
+      y: bounds.y - VISUAL_WINDOW_OVERFLOW_Y,
+      width: bounds.width + VISUAL_WINDOW_OVERFLOW_X * 2,
+      height: bounds.height + VISUAL_WINDOW_OVERFLOW_Y * 2,
+    },
+  };
+}
+
+/** 判断两个窗口范围是否完全一致。 */
+function areWindowBoundsEqual(left, right) {
+  return Boolean(
+    left
+    && right
+    && left.x === right.x
+    && left.y === right.y
+    && left.width === right.width
+    && left.height === right.height
+  );
 }
 
 
@@ -332,7 +374,81 @@ function clearEdgePatrolDelay() {
   }
 }
 
-/** 按角色可见区域计算当前显示器的巡边坐标。 */
+/** 判断二维坐标是否由两个有限数值组成。 */
+function isFinitePoint(point) {
+  return Number.isFinite(point?.x) && Number.isFinite(point?.y);
+}
+
+/** 判断显示器工作区是否可以安全参与巡边计算。 */
+function isValidWorkArea(workArea) {
+  return Boolean(
+    isFinitePoint(workArea)
+    && Number.isFinite(workArea?.width)
+    && Number.isFinite(workArea?.height)
+    && workArea.width > 0
+    && workArea.height > 0
+  );
+}
+
+/** 判断巡边范围是否完整且方向有效。 */
+function isValidEdgePatrolBounds(bounds) {
+  return Boolean(
+    Number.isFinite(bounds?.left)
+    && Number.isFinite(bounds?.top)
+    && Number.isFinite(bounds?.right)
+    && Number.isFinite(bounds?.bottom)
+    && bounds.left <= bounds.right
+    && bounds.top <= bounds.bottom
+  );
+}
+
+/** 判断巡边状态能否继续参与位移计算。 */
+function isValidEdgePatrolState(state) {
+  return Boolean(
+    state
+    && isFinitePoint(state)
+    && isValidEdgePatrolBounds(state.bounds)
+    && EDGE_PATROL_SEGMENTS.has(state.segment)
+    && isFinitePoint(state.target)
+    && Number.isFinite(state.lastTickAt)
+  );
+}
+
+/** 将窗口坐标转换为 Electron 可接收的 32 位整数。 */
+function normalizeWindowCoordinate(value) {
+  if (!Number.isFinite(value)) return null;
+  const rounded = Math.round(value);
+  if (rounded < WINDOW_COORDINATE_MIN || rounded > WINDOW_COORDINATE_MAX) return null;
+  return rounded;
+}
+
+/** 记录巡边故障现场，保留 NaN、Infinity 等关键数值。 */
+function reportEdgePatrolFailure(reason, error = null, details = null) {
+  const state = runtime.edgePatrolState;
+  const diagnostic = {
+    reason,
+    segment: state?.segment ?? null,
+    position: state ? { x: state.x, y: state.y } : null,
+    target: state?.target ?? null,
+    bounds: state?.bounds ?? null,
+    lastTickAt: state?.lastTickAt ?? null,
+    details,
+    error: error instanceof Error ? error.stack || error.message : error,
+  };
+  const serialized = JSON.stringify(diagnostic, (_key, value) => (
+    typeof value === 'number' && !Number.isFinite(value) ? String(value) : value
+  ));
+  runtime.ctx?.logger.error(`巡边动画状态异常，已安全停止并等待重新启动：${serialized}`);
+}
+
+/** 清除受污染的巡边状态，并按待命规则重新开始计时。 */
+function recoverEdgePatrol(reason, error = null, details = null) {
+  reportEdgePatrolFailure(reason, error, details);
+  stopEdgePatrol();
+  scheduleEdgePatrol();
+}
+
+/** 按角色可见区域计算整个虚拟桌面的巡边坐标。 */
 function getEdgePatrolTravelBounds(workArea) {
   return {
     left: workArea.x - PET_SPRITE_INSET_X,
@@ -376,30 +492,55 @@ function getEdgePatrolAnimation(segment) {
 /** 激活巡边阶段并同步对应动作。 */
 function activateEdgePatrolSegment(segment) {
   const state = runtime.edgePatrolState;
-  if (!state) return;
+  if (
+    !state
+    || !EDGE_PATROL_SEGMENTS.has(segment)
+    || !isFinitePoint(state)
+    || !isValidEdgePatrolBounds(state.bounds)
+  ) {
+    return false;
+  }
+  const target = getEdgePatrolTarget(segment, state);
+  if (!isFinitePoint(target)) return false;
   state.segment = segment;
-  state.target = getEdgePatrolTarget(segment, state);
+  state.target = target;
   const animation = getEdgePatrolAnimation(segment);
-  if (state.animation === animation) return;
+  if (state.animation === animation) return true;
   state.animation = animation;
   publishMotion({
     active: true,
     animation,
     source: 'edge-patrol',
   });
+  return true;
 }
 
 /** 移动巡边输入窗口并同步唯一视觉层。 */
 function moveEdgePatrolWindow(x, y) {
   const win = runtime.petWindow;
-  if (!win || win.isDestroyed()) return;
-  const roundedX = Math.round(x);
-  const roundedY = Math.round(y);
-  const [currentX, currentY] = win.getPosition();
-  if (currentX !== roundedX || currentY !== roundedY) {
-    win.setPosition(roundedX, roundedY);
+  if (!win || win.isDestroyed()) return false;
+  const roundedX = normalizeWindowCoordinate(x);
+  const roundedY = normalizeWindowCoordinate(y);
+  if (roundedX === null || roundedY === null) {
+    recoverEdgePatrol('窗口目标坐标不是有效整数', null, { x, y });
+    return false;
   }
-  showDragPreview(roundedX, roundedY);
+
+  try {
+    const [currentX, currentY] = win.getPosition();
+    if (!Number.isFinite(currentX) || !Number.isFinite(currentY)) {
+      recoverEdgePatrol('Electron 返回了无效窗口坐标', null, { currentX, currentY });
+      return false;
+    }
+    if (currentX !== roundedX || currentY !== roundedY) {
+      win.setPosition(roundedX, roundedY);
+    }
+    if (!showDragPreview(roundedX, roundedY)) return false;
+    return true;
+  } catch (error) {
+    recoverEdgePatrol('Electron 窗口移动调用失败', error, { x: roundedX, y: roundedY });
+    return false;
+  }
 }
 
 /** 按真实经过时间推进一次顺时针巡边。 */
@@ -410,9 +551,17 @@ function advanceEdgePatrol() {
     stopEdgePatrol();
     return;
   }
+  if (!isValidEdgePatrolState(state)) {
+    recoverEdgePatrol('推进前巡边状态无效');
+    return;
+  }
 
   const now = Date.now();
   const elapsedMs = Math.min(EDGE_PATROL_MAX_ELAPSED_MS, Math.max(0, now - state.lastTickAt));
+  if (!Number.isFinite(elapsedMs)) {
+    recoverEdgePatrol('巡边计时结果无效', null, { now });
+    return;
+  }
   state.lastTickAt = now;
   let remainingDistance = EDGE_PATROL_SPEED_PX_PER_SECOND * elapsedMs / 1000;
   let transitionCount = 0;
@@ -421,8 +570,15 @@ function advanceEdgePatrol() {
     const deltaX = state.target.x - state.x;
     const deltaY = state.target.y - state.y;
     const distance = Math.hypot(deltaX, deltaY);
+    if (!Number.isFinite(distance)) {
+      recoverEdgePatrol('巡边距离计算结果无效', null, { deltaX, deltaY });
+      return;
+    }
     if (distance <= 0.01) {
-      activateEdgePatrolSegment(getNextEdgePatrolSegment(state.segment));
+      if (!activateEdgePatrolSegment(getNextEdgePatrolSegment(state.segment))) {
+        recoverEdgePatrol('无法切换到下一巡边阶段');
+        return;
+      }
       transitionCount += 1;
       continue;
     }
@@ -430,16 +586,27 @@ function advanceEdgePatrol() {
       state.x = state.target.x;
       state.y = state.target.y;
       remainingDistance -= distance;
-      activateEdgePatrolSegment(getNextEdgePatrolSegment(state.segment));
+      if (!activateEdgePatrolSegment(getNextEdgePatrolSegment(state.segment))) {
+        recoverEdgePatrol('无法切换到下一巡边阶段');
+        return;
+      }
       transitionCount += 1;
       continue;
     }
     const ratio = remainingDistance / distance;
+    if (!Number.isFinite(ratio)) {
+      recoverEdgePatrol('巡边位移比例无效', null, { remainingDistance, distance });
+      return;
+    }
     state.x += deltaX * ratio;
     state.y += deltaY * ratio;
     remainingDistance = 0;
   }
 
+  if (!isFinitePoint(state)) {
+    recoverEdgePatrol('推进后的巡边坐标无效');
+    return;
+  }
   moveEdgePatrolWindow(state.x, state.y);
 }
 
@@ -448,14 +615,29 @@ function startEdgePatrol() {
   runtime.edgePatrolDelayTimer = null;
   if (!canStartEdgePatrol() || runtime.edgePatrolState) return;
   const win = runtime.petWindow;
-  const [windowX, windowY] = win.getPosition();
-  const { workArea } = screen.getDisplayMatching({
-    x: windowX,
-    y: windowY,
-    width: PET_WINDOW_WIDTH,
-    height: PET_WINDOW_HEIGHT,
-  });
+  let windowX;
+  let windowY;
+  let workArea;
+  try {
+    [windowX, windowY] = win.getPosition();
+    if (!Number.isFinite(windowX) || !Number.isFinite(windowY)) {
+      recoverEdgePatrol('启动巡边时读取到无效窗口坐标', null, { windowX, windowY });
+      return;
+    }
+    workArea = getVirtualDesktopWorkArea();
+  } catch (error) {
+    recoverEdgePatrol('启动巡边时读取窗口或虚拟桌面信息失败', error);
+    return;
+  }
+  if (!isValidWorkArea(workArea)) {
+    recoverEdgePatrol('启动巡边时读取到无效虚拟桌面工作区', null, { workArea });
+    return;
+  }
   const bounds = getEdgePatrolTravelBounds(workArea);
+  if (!isValidEdgePatrolBounds(bounds)) {
+    recoverEdgePatrol('虚拟桌面工作区无法容纳桌宠巡边', null, { workArea, bounds });
+    return;
+  }
   const x = clamp(windowX, bounds.left, bounds.right);
   const y = clamp(windowY, bounds.top, bounds.bottom);
   runtime.edgePatrolState = {
@@ -467,10 +649,13 @@ function startEdgePatrol() {
     animation: null,
     lastTickAt: Date.now(),
   };
-  moveEdgePatrolWindow(x, y);
   const leftDistance = Math.abs(x - bounds.left);
   const rightDistance = Math.abs(bounds.right - x);
-  activateEdgePatrolSegment(leftDistance <= rightDistance ? 'approach-left' : 'approach-right');
+  if (!activateEdgePatrolSegment(leftDistance <= rightDistance ? 'approach-left' : 'approach-right')) {
+    recoverEdgePatrol('无法初始化巡边阶段');
+    return;
+  }
+  if (!moveEdgePatrolWindow(x, y)) return;
   runtime.edgePatrolFrameTimer = setInterval(advanceEdgePatrol, EDGE_PATROL_FRAME_INTERVAL_MS);
 }
 
@@ -499,6 +684,39 @@ function scheduleEdgePatrol() {
   clearEdgePatrolDelay();
   if (runtime.edgePatrolState || !canStartEdgePatrol()) return;
   runtime.edgePatrolDelayTimer = setTimeout(startEdgePatrol, EDGE_PATROL_IDLE_DELAY_MS);
+}
+
+/** 显示器布局变化后同步视觉画布，并按新虚拟桌面重新启动巡边。 */
+function handleDisplayConfigurationChanged() {
+  const wasPatrolling = Boolean(runtime.edgePatrolState);
+  stopEdgePatrol();
+  const win = runtime.petWindow;
+  if (win && !win.isDestroyed()) {
+    const [windowX, windowY] = win.getPosition();
+    showDragPreview(windowX, windowY);
+  }
+  if (wasPatrolling) {
+    runtime.ctx?.logger.info('显示器布局发生变化，视觉画布和巡边范围已重新计算');
+  }
+  scheduleEdgePatrol();
+}
+
+/** 注册影响巡边工作区的显示器事件。 */
+function registerDisplayEvents() {
+  if (runtime.displayEventsRegistered) return;
+  screen.on('display-added', handleDisplayConfigurationChanged);
+  screen.on('display-removed', handleDisplayConfigurationChanged);
+  screen.on('display-metrics-changed', handleDisplayConfigurationChanged);
+  runtime.displayEventsRegistered = true;
+}
+
+/** 移除显示器事件监听。 */
+function unregisterDisplayEvents() {
+  if (!runtime.displayEventsRegistered) return;
+  screen.removeListener('display-added', handleDisplayConfigurationChanged);
+  screen.removeListener('display-removed', handleDisplayConfigurationChanged);
+  screen.removeListener('display-metrics-changed', handleDisplayConfigurationChanged);
+  runtime.displayEventsRegistered = false;
 }
 
 /** 计算指定桌宠坐标对应的状态气泡位置。 */
@@ -595,27 +813,65 @@ function normalizeDragDelta(delta) {
   return { x: Math.round(x), y: Math.round(y) };
 }
 
-/** 在固定透明画布内更新角色和气泡位置。 */
+/** 将唯一视觉画布切换到桌宠当前所在的显示器。 */
+function syncDragPreviewWindowLayout(petBounds) {
+  const previewWindow = runtime.dragPreviewWindow;
+  if (!previewWindow || previewWindow.isDestroyed()) return null;
+
+  const layout = getDragPreviewWindowLayout(petBounds);
+  const needsUpdate = (
+    runtime.dragPreviewDisplayId !== layout.displayId
+    || !areWindowBoundsEqual(runtime.dragPreviewTargetBounds, layout.bounds)
+  );
+  if (needsUpdate) {
+    previewWindow.setBounds(layout.bounds);
+    previewWindow.moveTop();
+    runtime.dragPreviewDisplayId = layout.displayId;
+    runtime.dragPreviewTargetBounds = layout.bounds;
+  }
+  return previewWindow.getBounds();
+}
+
+/** 在当前显示器的局部透明画布内更新角色和气泡位置。 */
 function showDragPreview(windowX, windowY) {
   const previewWindow = runtime.dragPreviewWindow;
-  if (!previewWindow || previewWindow.isDestroyed()) return;
+  if (
+    !previewWindow
+    || previewWindow.isDestroyed()
+    || !Number.isFinite(windowX)
+    || !Number.isFinite(windowY)
+  ) {
+    return false;
+  }
 
-  const previewBounds = previewWindow.getBounds();
-  const bubblePosition = calculateBubbleWindowPosition({
-    x: windowX,
-    y: windowY,
-    width: PET_WINDOW_WIDTH,
-    height: PET_WINDOW_HEIGHT,
-  });
-  runtime.latestDragPreview = {
-    active: true,
-    x: windowX - previewBounds.x + PET_SPRITE_INSET_X,
-    y: windowY - previewBounds.y + PET_SPRITE_INSET_Y,
-    bubbleX: bubblePosition.x - previewBounds.x,
-    bubbleY: bubblePosition.y - previewBounds.y,
-  };
-  if (runtime.dragPreviewRendererReady) {
-    sendToWindow(previewWindow, DRAG_PREVIEW_CHANNEL, runtime.latestDragPreview);
+  try {
+    const petBounds = {
+      x: Math.round(windowX),
+      y: Math.round(windowY),
+      width: PET_WINDOW_WIDTH,
+      height: PET_WINDOW_HEIGHT,
+    };
+    const previewBounds = syncDragPreviewWindowLayout(petBounds);
+    if (!previewBounds) return false;
+    const bubblePosition = calculateBubbleWindowPosition(petBounds);
+    runtime.latestDragPreview = {
+      active: true,
+      x: petBounds.x - previewBounds.x + PET_SPRITE_INSET_X,
+      y: petBounds.y - previewBounds.y + PET_SPRITE_INSET_Y,
+      bubbleX: bubblePosition.x - previewBounds.x,
+      bubbleY: bubblePosition.y - previewBounds.y,
+    };
+    if (runtime.dragPreviewRendererReady) {
+      sendToWindow(previewWindow, DRAG_PREVIEW_CHANNEL, runtime.latestDragPreview);
+    }
+    return true;
+  } catch (error) {
+    if (runtime.edgePatrolState) {
+      recoverEdgePatrol('同步桌宠视觉画布失败', error, { windowX, windowY });
+    } else {
+      runtime.ctx?.logger.error('同步桌宠视觉画布失败:', error);
+    }
+    return false;
   }
 }
 
@@ -786,11 +1042,13 @@ function createPetWindow(ctx) {
   void win.loadFile(path.join(__dirname, 'drag-handle.html'));
   return win;
 }
-/** 创建始终可见、完全穿透鼠标的唯一桌宠视觉层。 */
-function createDragPreviewWindow(ctx) {
-  const bounds = getVirtualDesktopBounds();
+/** 创建覆盖桌宠当前显示器、完全穿透鼠标的唯一视觉层。 */
+function createDragPreviewWindow(ctx, petBounds) {
+  const layout = getDragPreviewWindowLayout(petBounds);
+  runtime.dragPreviewDisplayId = layout.displayId;
+  runtime.dragPreviewTargetBounds = layout.bounds;
   const win = ctx.createWindow({
-    ...bounds,
+    ...layout.bounds,
     show: false,
     frame: false,
     transparent: true,
@@ -828,6 +1086,8 @@ function createDragPreviewWindow(ctx) {
   win.on('closed', () => {
     if (runtime.dragPreviewWindow !== win) return;
     runtime.dragPreviewRendererReady = false;
+    runtime.dragPreviewDisplayId = null;
+    runtime.dragPreviewTargetBounds = null;
     runtime.dragPreviewWindow = null;
     const inputWindow = runtime.petWindow;
     if (inputWindow && !inputWindow.isDestroyed()) inputWindow.close();
@@ -839,6 +1099,7 @@ function createDragPreviewWindow(ctx) {
 function cleanupRuntime() {
   clearTerminalTimer();
   unregisterDragIpc();
+  unregisterDisplayEvents();
   runtime.dragState = null;
   stopEdgePatrol({ publishStopped: false });
 
@@ -861,6 +1122,8 @@ function cleanupRuntime() {
   const visualWindow = runtime.dragPreviewWindow;
   runtime.dragPreviewWindow = null;
   runtime.dragPreviewRendererReady = false;
+  runtime.dragPreviewDisplayId = null;
+  runtime.dragPreviewTargetBounds = null;
   if (visualWindow && !visualWindow.isDestroyed()) visualWindow.close();
 
   const inputWindow = runtime.petWindow;
@@ -884,11 +1147,17 @@ module.exports = {
     runtime.latestStatus = createIdleStatus();
     runtime.hostWindow = findHostWindow();
     runtime.petWindow = createPetWindow(ctx);
-    runtime.dragPreviewWindow = createDragPreviewWindow(ctx);
     const [initialX, initialY] = runtime.petWindow.getPosition();
+    runtime.dragPreviewWindow = createDragPreviewWindow(ctx, {
+      x: initialX,
+      y: initialY,
+      width: PET_WINDOW_WIDTH,
+      height: PET_WINDOW_HEIGHT,
+    });
     showDragPreview(initialX, initialY);
 
     registerDragIpc();
+    registerDisplayEvents();
     if (runtime.hostWindow) {
       runtime.hostWindow.once('closed', handleHostWindowClosed);
     }
