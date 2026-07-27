@@ -1,0 +1,40 @@
+{
+  "id": "classic-xiaoyi",
+  "displayName": "小易",
+  "description": "易标淡冰蓝软胶桌宠，陪伴用户完成标书任务。",
+  "canonicalBase": "references/canonical-base.png",
+  "canonicalBaseSource": "从正式无损 WebP 图集精确提取的待命首帧；当前没有该造型的独立高清原稿",
+  "identity": {
+    "body": "蓝青渐变水滴形身体",
+    "head": "头部圆润无角，右上方由一大两小三个淡冰蓝圆球组成固定识别标志",
+    "face": "两只大眼、微笑",
+    "limbs": "短手短脚",
+    "abdomen": "淡冰蓝 Q 形圆环、内圈和三个气泡点",
+    "constraints": [
+      "不得增加“易”字或其他文字",
+      "不得增加角、触角或头顶凸起",
+      "不得删除、合并或改变头顶三个圆球的数量和位置关系",
+      "不得改变腹部结构与颜色",
+      "不得改变角色物种、脸型、身体比例和主色",
+      "不得增加新道具"
+    ]
+  },
+  "style": {
+    "preset": "3d-toy",
+    "notes": "哑光软胶 3D 玩具质感，边缘清楚，造型紧凑。"
+  },
+  "production": {
+    "chromaKey": "#FFFF00",
+    "targetDisplaySizePx": 160,
+    "cellWidth": 192,
+    "cellHeight": 208,
+    "atlasColumns": 8,
+    "atlasRows": 19,
+    "requirements": [
+      "生成任何新动作时必须附带 canonicalBase",
+      "保持脸部、比例、材质、配色、腹部标志和整体轮廓一致",
+      "角色必须完整位于单元格内",
+      "禁止文字、场景、阴影、光晕和脱离角色的特效"
+    ]
+  }
+}
