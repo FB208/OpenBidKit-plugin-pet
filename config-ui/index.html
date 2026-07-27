@@ -15,10 +15,10 @@
     <header class="settings-header">
       <div>
         <p class="settings-kicker">易标桌宠</p>
-        <h1>皮肤设置</h1>
-        <p class="settings-description">选择后将立即保存，并同步应用到正在运行的桌宠。</p>
+        <h1>桌宠设置</h1>
+        <p class="settings-description">皮肤与效果修改后将立即保存，并同步应用到正在运行的桌宠。</p>
       </div>
-      <span class="settings-badge">外观</span>
+      <span class="settings-badge">设置</span>
     </header>
 
     <section class="settings-section" aria-labelledby="skinSectionTitle">
@@ -29,6 +29,16 @@
         </div>
       </div>
       <div id="skinList" class="skin-list" role="radiogroup" aria-label="角色皮肤"></div>
+    </section>
+
+    <section class="settings-section" aria-labelledby="effectSectionTitle">
+      <div class="section-heading">
+        <div>
+          <h2 id="effectSectionTitle">效果开启</h2>
+          <p>按需开启桌宠在待命时可触发的附加效果。</p>
+        </div>
+      </div>
+      <div id="effectList" class="effect-list" role="group" aria-label="桌宠效果"></div>
     </section>
 
     <p id="saveStatus" class="save-status" data-tone="muted" role="status" aria-live="polite">
@@ -49,7 +59,18 @@
     </button>
   </template>
 
+  <template id="effectOptionTemplate">
+    <label class="effect-option">
+      <span class="effect-option__copy">
+        <strong class="effect-option__name"></strong>
+        <span class="effect-option__description"></span>
+      </span>
+      <input class="effect-option__toggle" type="checkbox" role="switch">
+    </label>
+  </template>
+
   <script src="../skin-registry.js"></script>
+  <script src="../effect-registry.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

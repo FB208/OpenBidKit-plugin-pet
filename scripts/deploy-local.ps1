@@ -24,6 +24,7 @@ $runtimeFiles = @(
   "package.json",
   "main.cjs",
   "preload.cjs",
+  "effect-registry.js",
   "skin-registry.js",
   "bubble.html",
   "bubble.css",

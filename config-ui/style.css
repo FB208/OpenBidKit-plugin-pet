@@ -89,6 +89,10 @@ h1 {
   box-shadow: 0 16px 40px rgba(45, 66, 105, 0.08);
 }
 
+.settings-section + .settings-section {
+  margin-top: 16px;
+}
+
 .section-heading {
   display: flex;
   align-items: center;
@@ -198,6 +202,99 @@ h1 {
 .skin-card[aria-checked="true"] .skin-card__check {
   color: #fff;
   background: #5e8be2;
+}
+
+.effect-list {
+  display: grid;
+  gap: 12px;
+}
+
+.effect-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 82px;
+  padding: 16px 18px;
+  border: 1px solid #dfe5ef;
+  border-radius: 16px;
+  background: #fff;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.effect-option:hover {
+  border-color: #a9c2f1;
+  box-shadow: 0 10px 24px rgba(56, 99, 180, 0.1);
+  transform: translateY(-1px);
+}
+
+.effect-option__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.effect-option__name {
+  font-size: 15px;
+}
+
+.effect-option__description {
+  color: #748096;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.effect-option__toggle {
+  position: relative;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 24px;
+  margin: 0;
+  appearance: none;
+  border: 1px solid #cfd7e4;
+  border-radius: 999px;
+  background: #e8edf4;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.effect-option__toggle::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(42, 55, 80, 0.24);
+  transition: transform 160ms ease;
+}
+
+.effect-option__toggle:checked {
+  border-color: #5e8be2;
+  background: #5e8be2;
+}
+
+.effect-option__toggle:checked::after {
+  transform: translateX(20px);
+}
+
+.effect-option__toggle:focus-visible {
+  outline: 3px solid rgba(71, 118, 216, 0.24);
+  outline-offset: 3px;
+}
+
+.effect-option__toggle:disabled {
+  cursor: wait;
+  opacity: 0.68;
 }
 
 .save-status {

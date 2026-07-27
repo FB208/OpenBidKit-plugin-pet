@@ -1,5 +1,6 @@
 const path = require('path');
 const { BrowserWindow, ipcMain, screen } = require('electron');
+const effectRegistry = require('./effect-registry.js');
 const skinRegistry = require('./skin-registry.js');
 
 const PLUGIN_ID = 'openbidkit-pet';
@@ -13,6 +14,8 @@ const DRAG_END_CHANNEL = `plugin:${PLUGIN_ID}:drag-end`;
 const DRAG_CANCEL_CHANNEL = `plugin:${PLUGIN_ID}:drag-cancel`;
 const HOVER_CHANNEL = `plugin:${PLUGIN_ID}:hover`;
 const DRAG_PREVIEW_CHANNEL = `plugin:${PLUGIN_ID}:drag-preview`;
+const ENABLED_EFFECT_IDS_CONFIG_KEY = 'enabledEffectIds';
+const EDGE_PATROL_EFFECT_ID = 'edge-patrol';
 const PET_WINDOW_WIDTH = 160;
 const PET_WINDOW_HEIGHT = 151;
 const PET_SPRITE_WIDTH = 132;
@@ -78,6 +81,7 @@ const runtime = {
   dragPreviewRendererReady: false,
   dragPreviewDisplayId: null,
   dragPreviewTargetBounds: null,
+  enabledEffectIds: new Set(),
   latestSkin: null,
   latestStatus: createIdleStatus(),
   latestDragPreview: null,
@@ -207,6 +211,32 @@ function getConfiguredSkin(ctx) {
     throw new Error(`未注册的桌宠皮肤: ${skinId}`);
   }
   return createSkinPresentation(skin);
+}
+
+/** 读取当前配置中已启用的桌宠效果。 */
+function getConfiguredEffectIds(ctx) {
+  return effectRegistry.resolveEnabledEffectIds(
+    ctx.store.get(ENABLED_EFFECT_IDS_CONFIG_KEY),
+  );
+}
+
+/** 判断指定桌宠效果当前是否启用。 */
+function isEffectEnabled(effectId) {
+  return runtime.enabledEffectIds.has(effectId);
+}
+
+/** 即时应用配置页提交的效果开关。 */
+function applyEnabledEffects(value) {
+  const effectIds = effectRegistry.resolveEnabledEffectIds(value);
+  runtime.enabledEffectIds = new Set(effectIds);
+
+  if (isEffectEnabled(EDGE_PATROL_EFFECT_ID)) {
+    scheduleEdgePatrol();
+  } else {
+    stopEdgePatrol();
+  }
+
+  return effectIds;
 }
 
 /** 计算所有显示器工作区共同组成的虚拟桌面巡边范围。 */
@@ -358,7 +388,8 @@ function clamp(value, minimum, maximum) {
 function canStartEdgePatrol() {
   const win = runtime.petWindow;
   return Boolean(
-    runtime.latestStatus?.tone === 'idle'
+    isEffectEnabled(EDGE_PATROL_EFFECT_ID)
+    && runtime.latestStatus?.tone === 'idle'
     && !runtime.dragState
     && !runtime.latestHovered
     && win
@@ -1132,6 +1163,7 @@ function cleanupRuntime() {
 
   runtime.ctx = null;
   runtime.latestStatus = createIdleStatus();
+  runtime.enabledEffectIds = new Set();
 }
 /** 主程序窗口关闭时同步清理桌宠，避免插件窗口阻止应用退出。 */
 function handleHostWindowClosed() {
@@ -1143,6 +1175,7 @@ module.exports = {
   async activate(ctx) {
     cleanupRuntime();
     runtime.ctx = ctx;
+    runtime.enabledEffectIds = new Set(getConfiguredEffectIds(ctx));
     runtime.latestSkin = getConfiguredSkin(ctx);
     runtime.latestStatus = createIdleStatus();
     runtime.hostWindow = findHostWindow();
@@ -1167,17 +1200,25 @@ module.exports = {
     ctx.logger.info('易标桌宠已启用');
   },
 
-  /** 配置页保存皮肤后，无需重启插件即可更新视觉层。 */
+  /** 配置页保存后，无需重启插件即可更新皮肤或效果。 */
   async onConfigChange(change) {
-    if (change?.key !== 'skinId' || !runtime.ctx) return;
+    if (!runtime.ctx || !change) return;
 
-    const skin = skinRegistry.getSkin(String(change.value));
-    if (!skin) {
-      throw new Error(`未注册的桌宠皮肤: ${change.value}`);
+    if (change.key === 'skinId') {
+      const skin = skinRegistry.getSkin(String(change.value));
+      if (!skin) {
+        throw new Error(`未注册的桌宠皮肤: ${change.value}`);
+      }
+
+      publishSkin(createSkinPresentation(skin));
+      runtime.ctx.logger.info(`桌宠皮肤已切换: ${skin.id}`);
+      return;
     }
 
-    publishSkin(createSkinPresentation(skin));
-    runtime.ctx.logger.info(`桌宠皮肤已切换: ${skin.id}`);
+    if (change.key === ENABLED_EFFECT_IDS_CONFIG_KEY) {
+      const effectIds = applyEnabledEffects(change.value);
+      runtime.ctx.logger.info(`桌宠效果已更新: ${effectIds.join(', ') || '无'}`);
+    }
   },
 
   /** 停用插件并释放全部运行资源。 */
