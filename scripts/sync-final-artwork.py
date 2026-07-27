@@ -14,7 +14,7 @@ from PIL import Image
 CELL_WIDTH = 192
 CELL_HEIGHT = 208
 COLUMNS = 8
-ATLAS_ROWS = 29
+ATLAS_ROWS = 34
 STATE_SPECS = {
     "idle": {"startRow": 0, "frames": 24, "durationMs": 160},
     "running-right": {"startRow": 3, "frames": 16, "durationMs": 60},
@@ -25,11 +25,11 @@ STATE_SPECS = {
     "waiting": {"startRow": 13, "frames": 16, "durationMs": 80},
     "running": {"startRow": 15, "frames": 16, "durationMs": 60},
     "review": {"startRow": 17, "frames": 16, "durationMs": 80},
-    "walking-right": {"startRow": 19, "frames": 16, "durationMs": 90},
-    "walking-left": {"startRow": 21, "frames": 16, "durationMs": 90},
-    "climbing-up": {"startRow": 23, "frames": 16, "durationMs": 80},
-    "climbing-down": {"startRow": 25, "frames": 16, "durationMs": 80},
-    "hanging-right": {"startRow": 27, "frames": 16, "durationMs": 90},
+    "walking-right": {"startRow": 19, "frames": 24, "durationMs": 120},
+    "walking-left": {"startRow": 22, "frames": 24, "durationMs": 120},
+    "climbing-up": {"startRow": 25, "frames": 24, "durationMs": 110},
+    "climbing-down": {"startRow": 28, "frames": 24, "durationMs": 110},
+    "hanging-right": {"startRow": 31, "frames": 24, "durationMs": 120},
 }
 
 
@@ -107,7 +107,7 @@ def export_final(atlas_path: Path, output_dir: Path) -> None:
 此目录由正式运行图集 `assets/pet-spritesheet.webp` 精确拆分而成，只保留当前最终成稿。
 
 - `canonical-frame.png`：最终角色基准帧。
-- `frames/`：14 组动画，共 232 张 `192×208` 透明 PNG 帧。
+- `frames/`：14 组动画，共 272 张 `192×208` 透明 PNG 帧。
 - `spritesheet.png`：无损可编辑图集。
 - `spritesheet.webp`：导出时的正式运行图集副本。
 - `atlas-map.json`：帧数、起始行、速度及图集尺寸。

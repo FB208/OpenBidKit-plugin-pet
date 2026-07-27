@@ -11,7 +11,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, () => {
   const atlas = Object.freeze({
     columns: 8,
-    rows: 29,
+    rows: 34,
   });
 
   const skins = Object.freeze([

@@ -12,16 +12,16 @@ const ANIMATIONS = Object.freeze({
   waiting: { startRow: 13, frames: 16, keyframeMs: 80 },
   running: { startRow: 15, frames: 16, keyframeMs: 60 },
   review: { startRow: 17, frames: 16, keyframeMs: 80 },
-  'walking-right': { startRow: 19, frames: 16, keyframeMs: 90 },
-  'walking-left': { startRow: 21, frames: 16, keyframeMs: 90 },
-  'climbing-up': { startRow: 23, frames: 16, keyframeMs: 80 },
-  'climbing-down': { startRow: 25, frames: 16, keyframeMs: 80 },
-  'hanging-right': { startRow: 27, frames: 16, keyframeMs: 90 },
+  'walking-right': { startRow: 19, frames: 24, keyframeMs: 120 },
+  'walking-left': { startRow: 22, frames: 24, keyframeMs: 120 },
+  'climbing-up': { startRow: 25, frames: 24, keyframeMs: 110 },
+  'climbing-down': { startRow: 28, frames: 24, keyframeMs: 110 },
+  'hanging-right': { startRow: 31, frames: 24, keyframeMs: 120 },
 });
 
 const BLINK_INTERVAL_MS = 5_000;
 const DEFAULT_ATLAS_COLUMNS = 8;
-const DEFAULT_ATLAS_ROWS = 29;
+const DEFAULT_ATLAS_ROWS = 34;
 
 let animationFrameRequest = null;
 let blinkTimeout = null;

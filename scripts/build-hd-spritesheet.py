@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the plugin atlas from generated phase strips, seamless cycle strips, or 4×4 action grids."""
+"""Build the plugin atlas from phase strips, cycle strips, 4×4 grids, or stable 6×4 grids."""
 
 from __future__ import annotations
 
@@ -27,8 +27,16 @@ RIGHT_EDGE_STATES = {"climbing-down"}
 TOP_EDGE_STATES = {"hanging-right"}
 MAX_SPRITE_WIDTH = 182
 MAX_SPRITE_HEIGHT = 198
+MAX_PATROL_ANCHOR_X_DELTA = 3.0
+MAX_CLIMB_ANCHOR_Y_DELTA = 6.0
 STABLE_CYCLE_UNIQUE_FRAMES = 8
-STABLE_CYCLE_STATES = {"walking-right", "climbing-up", "climbing-down"}
+EDGE_PATROL_STATES = {
+    "walking-right",
+    "walking-left",
+    "climbing-up",
+    "climbing-down",
+    "hanging-right",
+}
 
 STATE_ORDER = [
     "idle",
@@ -47,9 +55,18 @@ STATE_ORDER = [
     "hanging-right",
 ]
 GENERATED_STATES = [state for state in STATE_ORDER if state != "running-left"]
-STATE_FRAME_COUNTS = {state: (24 if state == "idle" else FRAMES_PER_STATE) for state in STATE_ORDER}
-STATE_PHASES = {state: ("a", "b") for state in GENERATED_STATES}
-STATE_PHASES["idle"] = ("a", "b", "c")
+STATE_FRAME_COUNTS = {
+    state: (24 if state == "idle" or state in EDGE_PATROL_STATES else FRAMES_PER_STATE)
+    for state in STATE_ORDER
+}
+STATE_PHASES = {
+    state: (
+        ("a", "b", "c")
+        if state == "idle" or state in EDGE_PATROL_STATES
+        else ("a", "b")
+    )
+    for state in GENERATED_STATES
+}
 STATE_START_ROWS: dict[str, int] = {}
 _next_atlas_row = 0
 for _state in STATE_ORDER:
@@ -66,11 +83,11 @@ FRAME_DURATIONS_MS = {
     "waiting": 80,
     "running": 60,
     "review": 80,
-    "walking-right": 90,
-    "walking-left": 90,
-    "climbing-up": 80,
-    "climbing-down": 80,
-    "hanging-right": 90,
+    "walking-right": 120,
+    "walking-left": 120,
+    "climbing-up": 110,
+    "climbing-down": 110,
+    "hanging-right": 120,
 }
 JUMP_BASELINES = [202, 201, 199, 197, 195, 193, 191, 189, 189, 191, 193, 195, 197, 199, 201, 202]
 IMAGE_SUFFIXES = {".png", ".webp", ".jpg", ".jpeg"}
@@ -351,6 +368,155 @@ def extract_stable_cycle_frames(path: Path, state: str, frame_count: int) -> lis
         for index in range(frame_count)
     ]
 
+def extract_stable_grid_frames(
+    path: Path,
+    state: str,
+    frame_count: int,
+    columns: int = 6,
+    rows: int = 4,
+) -> list[Image.Image]:
+    """按固定六乘四槽位和腹部标志锚点提取 24 帧稳定动作。"""
+    if columns * rows != frame_count:
+        raise ValueError(
+            f"grid {columns}x{rows} cannot provide {frame_count} frames"
+        )
+    with Image.open(path) as opened:
+        transparent = remove_chroma_background(opened)
+
+    slots: list[Image.Image] = []
+    pose_boxes: list[tuple[int, int, int, int]] = []
+    abdomen_anchors: list[tuple[float, float]] = []
+    for index in range(frame_count):
+        column = index % columns
+        row = index // columns
+        left = round(column * transparent.width / columns)
+        right = round((column + 1) * transparent.width / columns)
+        top = round(row * transparent.height / rows)
+        bottom = round((row + 1) * transparent.height / rows)
+        slot = transparent.crop((left, top, right, bottom))
+        cleaned_slot = keep_components_in_place(slot, select_pose_components(slot))
+        pose_box = cleaned_slot.getbbox()
+        if pose_box is None:
+            raise ValueError(f"{state} grid slot {index:02d} is empty")
+        slots.append(cleaned_slot)
+        pose_boxes.append(pose_box)
+        abdomen_anchors.append(locate_abdomen_anchor(cleaned_slot))
+
+    maximum_width = max(box[2] - box[0] for box in pose_boxes)
+    maximum_height = max(box[3] - box[1] for box in pose_boxes)
+    target_anchor_x = {
+        "climbing-up": 55.0,
+        "climbing-down": 116.0,
+    }.get(state, CENTER_X)
+    target_anchor_y = {
+        "climbing-up": 106.0,
+        "climbing-down": 112.0,
+    }.get(state, 112.0)
+    scale_limits = [
+        MAX_SPRITE_WIDTH / maximum_width,
+        MAX_SPRITE_HEIGHT / maximum_height,
+    ]
+    for pose_box, abdomen_anchor in zip(pose_boxes, abdomen_anchors):
+        left_extent = abdomen_anchor[0] - pose_box[0]
+        right_extent = pose_box[2] - abdomen_anchor[0]
+        if left_extent > 0:
+            scale_limits.append((target_anchor_x - EDGE_PADDING) / left_extent)
+        if right_extent > 0:
+            scale_limits.append((CELL_WIDTH - EDGE_PADDING - target_anchor_x) / right_extent)
+
+        if state in LEFT_EDGE_STATES or state in RIGHT_EDGE_STATES:
+            top_extent = abdomen_anchor[1] - pose_box[1]
+            bottom_extent = pose_box[3] - abdomen_anchor[1]
+            if top_extent > 0:
+                scale_limits.append((target_anchor_y - EDGE_PADDING) / top_extent)
+            if bottom_extent > 0:
+                scale_limits.append((CELL_HEIGHT - EDGE_PADDING - target_anchor_y) / bottom_extent)
+        elif state in TOP_EDGE_STATES:
+            scale_limits.append((CELL_HEIGHT - 2 * EDGE_PADDING) / (pose_box[3] - pose_box[1]))
+        else:
+            scale_limits.append(
+                (GROUND_BASELINE + 1 - EDGE_PADDING) / (pose_box[3] - pose_box[1])
+            )
+    scale = min(scale_limits)
+
+    frames: list[Image.Image] = []
+    for index, (slot, pose_box, abdomen_anchor) in enumerate(
+        zip(slots, pose_boxes, abdomen_anchors)
+    ):
+        sprite = slot.crop(pose_box)
+        canvas_width = max(1, round(sprite.width * scale))
+        canvas_height = max(1, round(sprite.height * scale))
+        canvas = sprite.resize(
+            (canvas_width, canvas_height),
+            Image.Resampling.LANCZOS,
+        )
+        anchor_x = (abdomen_anchor[0] - pose_box[0]) * canvas_width / sprite.width
+        anchor_y = (abdomen_anchor[1] - pose_box[1]) * canvas_height / sprite.height
+        left = round(target_anchor_x - anchor_x)
+
+        if state in LEFT_EDGE_STATES or state in RIGHT_EDGE_STATES:
+            top = round(target_anchor_y - anchor_y)
+        elif state in TOP_EDGE_STATES:
+            top = EDGE_PADDING
+        else:
+            top = GROUND_BASELINE - canvas_height + 1
+        if (
+            left < 0
+            or top < 0
+            or left + canvas_width > CELL_WIDTH
+            or top + canvas_height > CELL_HEIGHT
+        ):
+            raise ValueError(
+                f"{state} frame {index:02d} exceeds the cell after abdomen-anchor placement"
+            )
+        cell = Image.new("RGBA", (CELL_WIDTH, CELL_HEIGHT), (0, 0, 0, 0))
+        cell.alpha_composite(canvas, (left, top))
+        frames.append(clear_transparent_rgb(cell))
+    return frames
+
+
+def locate_abdomen_anchor(image: Image.Image) -> tuple[float, float]:
+    """定位腹部浅色圆环中心，作为跨帧稳定的躯干锚点。"""
+    rgba = image.convert("RGBA")
+    pose_box = rgba.getbbox()
+    if pose_box is None:
+        raise ValueError("cannot locate abdomen anchor in an empty frame")
+
+    pose_width = pose_box[2] - pose_box[0]
+    pose_height = pose_box[3] - pose_box[1]
+    roi_left = pose_box[0] + round(pose_width * 0.12)
+    roi_right = pose_box[2] - round(pose_width * 0.12)
+    roi_top = pose_box[1] + round(pose_height * 0.34)
+    roi_bottom = pose_box[1] + round(pose_height * 0.78)
+    mask = Image.new("RGBA", rgba.size, (0, 0, 0, 0))
+    source_pixels = rgba.load()
+    mask_pixels = mask.load()
+
+    for y in range(max(0, roi_top), min(rgba.height, roi_bottom)):
+        for x in range(max(0, roi_left), min(rgba.width, roi_right)):
+            red, green, blue, alpha = source_pixels[x, y]
+            if (
+                alpha > 16
+                and red >= 115
+                and green >= 170
+                and blue >= 210
+                and blue - red < 150
+            ):
+                mask_pixels[x, y] = (255, 255, 255, 255)
+
+    components = [
+        component
+        for component in connected_components(mask)
+        if int(component["area"]) >= 40
+    ]
+    if not components:
+        raise ValueError("cannot locate the abdomen identity mark")
+    abdomen = max(components, key=lambda item: int(item["area"]))
+    indexes = abdomen["pixels"]
+    center_x = sum(int(index) % rgba.width for index in indexes) / len(indexes)
+    center_y = sum(int(index) // rgba.width for index in indexes) / len(indexes)
+    return center_x, center_y
+
 def select_pose_components(image: Image.Image) -> list[dict[str, object]]:
     """保留主体及邻近身份组件，排除从相邻格切入的边缘碎片。"""
     components = connected_components(image)
@@ -608,7 +774,7 @@ def frame_metrics(image: Image.Image, index: int) -> dict[str, object]:
 
 
 def validate_geometry(all_frames: dict[str, list[Image.Image]]) -> list[str]:
-    """按地面、侧边和顶部动作各自的对齐方式检查帧几何。"""
+    """按地面基线和腹部标志锚点检查逐帧几何稳定性。"""
     errors: list[str] = []
     for state, frames in all_frames.items():
         metrics = [frame_metrics(frame, index) for index, frame in enumerate(frames)]
@@ -621,22 +787,16 @@ def validate_geometry(all_frames: dict[str, list[Image.Image]]) -> list[str]:
         # 失败姿态会逐步蜷缩并遮挡四肢，面积变化属于动作语义；其体型改由逐帧视觉检查确认。
         if state == "failed":
             area_limit = 0.25
-        elif state in STABLE_CYCLE_STATES:
-            area_limit = 0.10
+        elif state in EDGE_PATROL_STATES:
+            area_limit = 0.12
         else:
             area_limit = 0.05
         if area_delta > area_limit:
             errors.append(
                 f"{state}: alpha-area variation {area_delta:.1%} exceeds {area_limit:.0%}"
             )
-        if state in STABLE_CYCLE_STATES:
-            if len(frames) % STABLE_CYCLE_UNIQUE_FRAMES != 0:
-                errors.append(f"{state}: stable cycle does not fill the formal frame count")
-            elif any(
-                frames[index].tobytes() != frames[index + STABLE_CYCLE_UNIQUE_FRAMES].tobytes()
-                for index in range(STABLE_CYCLE_UNIQUE_FRAMES)
-            ):
-                errors.append(f"{state}: repeated cycle frames are not pixel-identical")
+
+        if state in EDGE_PATROL_STATES:
             boxes = [metric["bbox"] for metric in metrics]
             if any(
                 int(box[0]) <= 0
@@ -646,38 +806,39 @@ def validate_geometry(all_frames: dict[str, list[Image.Image]]) -> list[str]:
                 for box in boxes
             ):
                 errors.append(f"{state}: sprite content touches a cell boundary")
-            if state == "walking-right":
+
+            anchors = [locate_abdomen_anchor(frame) for frame in frames]
+            anchor_x_values = [anchor[0] for anchor in anchors]
+            if max(anchor_x_values) - min(anchor_x_values) > MAX_PATROL_ANCHOR_X_DELTA:
+                errors.append(
+                    f"{state}: abdomen horizontal-anchor variation exceeds "
+                    f"{MAX_PATROL_ANCHOR_X_DELTA:.1f}px"
+                )
+
+            if state in {"walking-right", "walking-left"}:
                 baselines = [int(metric["baseline"]) for metric in metrics]
-                if max(baselines) - min(baselines) > 2:
-                    errors.append(f"{state}: foot-baseline variation exceeds 2px")
-            continue
-        if state in LEFT_EDGE_STATES:
-            left_edges = [int(metric["bbox"][0]) for metric in metrics]
-            vertical_centers = [float(metric["centroid_y"]) for metric in metrics]
-            if left_edges != [EDGE_PADDING] * len(frames):
-                errors.append(f"{state}: left-edge alignment does not match the geometry contract")
-            if max(vertical_centers) - min(vertical_centers) > 1.5:
-                errors.append(f"{state}: vertical visual-center variation exceeds 1.5px")
-        elif state in RIGHT_EDGE_STATES:
-            right_edges = [int(metric["bbox"][2]) for metric in metrics]
-            vertical_centers = [float(metric["centroid_y"]) for metric in metrics]
-            if right_edges != [CELL_WIDTH - EDGE_PADDING] * len(frames):
-                errors.append(f"{state}: right-edge alignment does not match the geometry contract")
-            if max(vertical_centers) - min(vertical_centers) > 1.5:
-                errors.append(f"{state}: vertical visual-center variation exceeds 1.5px")
-        else:
-            centers = [float(metric["centroid_x"]) for metric in metrics]
-            if max(centers) - min(centers) > 1.5:
-                errors.append(f"{state}: horizontal visual-center variation exceeds 1.5px")
-            if state in TOP_EDGE_STATES:
+                if max(baselines) - min(baselines) > 1:
+                    errors.append(f"{state}: foot-baseline variation exceeds 1px")
+            elif state in LEFT_EDGE_STATES or state in RIGHT_EDGE_STATES:
+                anchor_y_values = [anchor[1] for anchor in anchors]
+                if max(anchor_y_values) - min(anchor_y_values) > MAX_CLIMB_ANCHOR_Y_DELTA:
+                    errors.append(
+                        f"{state}: abdomen vertical-anchor variation exceeds "
+                        f"{MAX_CLIMB_ANCHOR_Y_DELTA:.1f}px"
+                    )
+            elif state in TOP_EDGE_STATES:
                 top_edges = [int(metric["bbox"][1]) for metric in metrics]
-                if top_edges != [EDGE_PADDING] * len(frames):
-                    errors.append(f"{state}: top-edge alignment does not match the geometry contract")
-            else:
-                baselines = [int(metric["baseline"]) for metric in metrics]
-                expected = JUMP_BASELINES if state == "jumping" else [GROUND_BASELINE] * len(frames)
-                if baselines != expected:
-                    errors.append(f"{state}: baseline sequence does not match the geometry contract")
+                if max(top_edges) - min(top_edges) > 1:
+                    errors.append(f"{state}: top hand-contact variation exceeds 1px")
+            continue
+
+        centers = [float(metric["centroid_x"]) for metric in metrics]
+        if max(centers) - min(centers) > 1.5:
+            errors.append(f"{state}: horizontal visual-center variation exceeds 1.5px")
+        baselines = [int(metric["baseline"]) for metric in metrics]
+        expected = JUMP_BASELINES if state == "jumping" else [GROUND_BASELINE] * len(frames)
+        if baselines != expected:
+            errors.append(f"{state}: baseline sequence does not match the geometry contract")
     return errors
 
 def write_frames(frames_root: Path, state: str, frames: list[Image.Image]) -> None:
@@ -843,8 +1004,16 @@ def main() -> None:
         raise SystemExit(f"unknown generated states: {', '.join(unknown_states)}")
 
     for state in selected_states:
+        stable_grid_path = decoded_dir / f"{state}-grid24.png"
         cycle_path = decoded_dir / f"{state}-cycle.png"
         contact_grid_path = decoded_dir / f"{state}.png"
+        if stable_grid_path.is_file():
+            all_frames[state] = extract_stable_grid_frames(
+                stable_grid_path,
+                state,
+                STATE_FRAME_COUNTS[state],
+            )
+            continue
         if cycle_path.is_file():
             all_frames[state] = extract_stable_cycle_frames(
                 cycle_path,

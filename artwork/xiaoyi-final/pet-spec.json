@@ -29,7 +29,7 @@
     "cellWidth": 192,
     "cellHeight": 208,
     "atlasColumns": 8,
-    "atlasRows": 29,
+    "atlasRows": 34,
     "requirements": [
       "生成任何新动作时必须附带 canonicalBase",
       "保持脸部、比例、材质、配色、腹部标志和整体轮廓一致",
@@ -39,6 +39,7 @@
   },
   "edgePatrolAnimations": {
     "idleDelayMs": 10000,
+    "speedPxPerSecond": 40,
     "route": [
       "从当前位置向最近的左右屏幕边缘行走",
       "左侧向上攀爬",
@@ -50,32 +51,32 @@
       {
         "id": "walking-right",
         "startRow": 19,
-        "frames": 16,
-        "durationMs": 90
+        "frames": 24,
+        "durationMs": 120
       },
       {
         "id": "walking-left",
-        "startRow": 21,
-        "frames": 16,
-        "durationMs": 90
+        "startRow": 22,
+        "frames": 24,
+        "durationMs": 120
       },
       {
         "id": "climbing-up",
-        "startRow": 23,
-        "frames": 16,
-        "durationMs": 80
+        "startRow": 25,
+        "frames": 24,
+        "durationMs": 110
       },
       {
         "id": "climbing-down",
-        "startRow": 25,
-        "frames": 16,
-        "durationMs": 80
+        "startRow": 28,
+        "frames": 24,
+        "durationMs": 110
       },
       {
         "id": "hanging-right",
-        "startRow": 27,
-        "frames": 16,
-        "durationMs": 90
+        "startRow": 31,
+        "frames": 24,
+        "durationMs": 120
       }
     ]
   }
