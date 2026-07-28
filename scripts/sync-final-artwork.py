@@ -14,7 +14,7 @@ from PIL import Image
 CELL_WIDTH = 192
 CELL_HEIGHT = 208
 COLUMNS = 8
-ATLAS_ROWS = 34
+ATLAS_ROWS = 36
 STATE_SPECS = {
     "idle": {"startRow": 0, "frames": 24, "durationMs": 160},
     "running-right": {"startRow": 3, "frames": 16, "durationMs": 60},
@@ -30,6 +30,7 @@ STATE_SPECS = {
     "climbing-up": {"startRow": 25, "frames": 24, "durationMs": 110},
     "climbing-down": {"startRow": 28, "frames": 24, "durationMs": 110},
     "hanging-right": {"startRow": 31, "frames": 24, "durationMs": 120},
+    "sleeping": {"startRow": 34, "frames": 16, "durationMs": 260},
 }
 
 
@@ -107,7 +108,7 @@ def export_final(atlas_path: Path, output_dir: Path) -> None:
 此目录由正式运行图集 `assets/pet-spritesheet.webp` 精确拆分而成，只保留当前最终成稿。
 
 - `canonical-frame.png`：最终角色基准帧。
-- `frames/`：14 组动画，共 272 张 `192×208` 透明 PNG 帧。
+- `frames/`：15 组动画，共 288 张 `192×208` 透明 PNG 帧。
 - `spritesheet.png`：无损可编辑图集。
 - `spritesheet.webp`：导出时的正式运行图集副本。
 - `atlas-map.json`：帧数、起始行、速度及图集尺寸。

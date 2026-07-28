@@ -17,11 +17,12 @@ const ANIMATIONS = Object.freeze({
   'climbing-up': { startRow: 25, frames: 24, keyframeMs: 110 },
   'climbing-down': { startRow: 28, frames: 24, keyframeMs: 110 },
   'hanging-right': { startRow: 31, frames: 24, keyframeMs: 120 },
+  sleeping: { startRow: 34, frames: 16, keyframeMs: 260 },
 });
 
 const BLINK_INTERVAL_MS = 5_000;
 const DEFAULT_ATLAS_COLUMNS = 8;
-const DEFAULT_ATLAS_ROWS = 34;
+const DEFAULT_ATLAS_ROWS = 36;
 
 let animationFrameRequest = null;
 let blinkTimeout = null;

@@ -1,0 +1,63 @@
+{
+  "id": "sacred-sword-singer",
+  "displayName": "圣剑歌手",
+  "description": "黑发黑衣、手持紫色麦克风的毛绒小歌手。",
+  "canonicalBase": "references/canonical-base.png",
+  "canonicalBaseSource": "用户提供的 assets/新皮肤.png 原样复制，SHA256: EB3F06D001FDD364403358FC6DBB6CB2F2BF6F4B92601A230E7FEE9062208B26",
+  "identity": {
+    "body": "大头短身的完整人形毛绒玩偶，四肢短而清楚，整体轮廓紧凑",
+    "head": "蓬松分层的黑色短发，右侧露出圆耳，发型轮廓与刘海分区固定",
+    "face": "暖米色、完全不透明的短绒织物脸，大号深棕眼、黑色眉毛与细小微笑",
+    "clothing": "黑色飞行夹克、白色圆领内搭、黑色束脚长裤",
+    "footwear": "白色厚底球鞋，紫色鞋带、后跟和侧边点缀",
+    "prop": "银灰网头、紫色握柄与紫色环带的手持麦克风",
+    "propRules": [
+      "常规动作中麦克风固定在角色解剖学右手，不得换到左手",
+      "攀爬和悬吊动作需要双手时，麦克风竖直固定在夹克正中胸前安全扣并保持完整可见",
+      "不得改变麦克风颜色、结构和大小；常规动作保持角色右手归属"
+    ],
+    "constraints": [
+      "不得改变角色物种、脸型、发型、身体比例和毛绒材质",
+      "脸、耳和手部必须保持暖米色短绒质感并完全不透明，不得灰化或半透明",
+      "不得改变服装层次、主色与紫色点缀",
+      "不得删除、复制或替换麦克风",
+      "不得增加文字、标志、场景或新道具",
+      "不得增加投影、光晕、速度线、灰尘或脱离角色的特效"
+    ]
+  },
+  "style": {
+    "preset": "plush",
+    "notes": "精致柔软的 3D 毛绒玩偶质感，织物绒毛细密，轮廓清楚，保持原图柔和棚拍式塑形但不保留背景和投影。"
+  },
+  "production": {
+    "chromaKey": "#00FF00",
+    "targetDisplaySizePx": 160,
+    "cellWidth": 192,
+    "cellHeight": 208,
+    "atlasColumns": 8,
+    "atlasRows": 36,
+    "requirements": [
+      "生成每个动作时必须同时附带 canonicalBase 和对应布局引导图",
+      "全部动作保持脸部、发型、比例、材质、配色、服装、鞋子和麦克风一致",
+      "角色必须完整位于单元格内，动作首尾自然衔接",
+      "正式图集使用透明背景无损 WebP"
+    ]
+  },
+  "animations": [
+    { "id": "idle", "startRow": 0, "frames": 24, "durationMs": 160 },
+    { "id": "running-right", "startRow": 3, "frames": 16, "durationMs": 60 },
+    { "id": "running-left", "startRow": 5, "frames": 16, "durationMs": 60 },
+    { "id": "waving", "startRow": 7, "frames": 16, "durationMs": 70 },
+    { "id": "jumping", "startRow": 9, "frames": 16, "durationMs": 65 },
+    { "id": "failed", "startRow": 11, "frames": 16, "durationMs": 90 },
+    { "id": "waiting", "startRow": 13, "frames": 16, "durationMs": 80 },
+    { "id": "running", "startRow": 15, "frames": 16, "durationMs": 60 },
+    { "id": "review", "startRow": 17, "frames": 16, "durationMs": 80 },
+    { "id": "walking-right", "startRow": 19, "frames": 24, "durationMs": 120 },
+    { "id": "walking-left", "startRow": 22, "frames": 24, "durationMs": 120 },
+    { "id": "climbing-up", "startRow": 25, "frames": 24, "durationMs": 110 },
+    { "id": "climbing-down", "startRow": 28, "frames": 24, "durationMs": 110 },
+    { "id": "hanging-right", "startRow": 31, "frames": 24, "durationMs": 120 },
+    { "id": "sleeping", "startRow": 34, "frames": 16, "durationMs": 260 }
+  ]
+}

@@ -16,6 +16,8 @@ const HOVER_CHANNEL = `plugin:${PLUGIN_ID}:hover`;
 const DRAG_PREVIEW_CHANNEL = `plugin:${PLUGIN_ID}:drag-preview`;
 const ENABLED_EFFECT_IDS_CONFIG_KEY = 'enabledEffectIds';
 const EDGE_PATROL_EFFECT_ID = 'edge-patrol';
+const SLEEP_EFFECT_ID = 'sleeping';
+const SLEEP_ANIMATION = 'sleeping';
 const PET_WINDOW_WIDTH = 160;
 const PET_WINDOW_HEIGHT = 151;
 const PET_SPRITE_WIDTH = 132;
@@ -32,7 +34,8 @@ const BUBBLE_EDGE_MARGIN = 8;
 const WINDOW_MARGIN = 24;
 const POSITION_SAVE_DELAY_MS = 200;
 const DRAG_MOVEMENT_THRESHOLD = 2;
-const EDGE_PATROL_IDLE_DELAY_MS = 10_000;
+const IDLE_EFFECT_DELAY_MS = 10_000;
+const IDLE_EFFECT_DURATION_MS = 10 * 60 * 1_000;
 const EDGE_PATROL_FRAME_INTERVAL_MS = 16;
 const EDGE_PATROL_SPEED_PX_PER_SECOND = 40;
 const EDGE_PATROL_MAX_ELAPSED_MS = 120;
@@ -73,7 +76,10 @@ const runtime = {
   terminalTimer: null,
   positionTimer: null,
   dragState: null,
-  edgePatrolDelayTimer: null,
+  idleEffectDelayTimer: null,
+  idleEffectDurationTimer: null,
+  activeIdleEffectId: null,
+  nextIdleEffectId: null,
   edgePatrolFrameTimer: null,
   edgePatrolState: null,
   displayEventsRegistered: false,
@@ -225,20 +231,60 @@ function isEffectEnabled(effectId) {
   return runtime.enabledEffectIds.has(effectId);
 }
 
+/** 按注册顺序读取当前启用的待机效果。 */
+function getEnabledIdleEffectIds() {
+  return effectRegistry.effects
+    .filter((effect) => isEffectEnabled(effect.id))
+    .map((effect) => effect.id);
+}
+
+/** 读取指定效果之后的下一个已启用待机效果。 */
+function getNextEnabledIdleEffectId(currentEffectId = null) {
+  const enabledIds = getEnabledIdleEffectIds();
+  if (enabledIds.length === 0) return null;
+  if (!currentEffectId) return enabledIds[0];
+
+  const currentIndex = effectRegistry.effects.findIndex(
+    (effect) => effect.id === currentEffectId,
+  );
+  for (let offset = 1; offset <= effectRegistry.effects.length; offset += 1) {
+    const candidate = effectRegistry.effects[
+      (currentIndex + offset + effectRegistry.effects.length)
+        % effectRegistry.effects.length
+    ];
+    if (isEffectEnabled(candidate.id)) return candidate.id;
+  }
+  return enabledIds[0];
+}
+
 /** 即时应用配置页提交的效果开关。 */
 function applyEnabledEffects(value) {
   const effectIds = effectRegistry.resolveEnabledEffectIds(value);
+  const activeEffectId = runtime.activeIdleEffectId;
   runtime.enabledEffectIds = new Set(effectIds);
 
-  if (isEffectEnabled(EDGE_PATROL_EFFECT_ID)) {
-    scheduleEdgePatrol();
-  } else {
-    stopEdgePatrol();
+  if (effectIds.length === 0) {
+    runtime.nextIdleEffectId = null;
+    stopIdleEffects({ preserveForResume: false });
+    return effectIds;
   }
 
+  if (activeEffectId && !isEffectEnabled(activeEffectId)) {
+    const nextEffectId = getNextEnabledIdleEffectId(activeEffectId);
+    stopIdleEffects({ preserveForResume: false });
+    runtime.nextIdleEffectId = nextEffectId;
+    scheduleIdleEffect();
+    return effectIds;
+  }
+
+  if (!activeEffectId) {
+    if (!isEffectEnabled(runtime.nextIdleEffectId)) {
+      runtime.nextIdleEffectId = getNextEnabledIdleEffectId();
+    }
+    scheduleIdleEffect();
+  }
   return effectIds;
 }
-
 /** 计算所有显示器工作区共同组成的虚拟桌面巡边范围。 */
 function getVirtualDesktopWorkArea() {
   const displays = screen.getAllDisplays();
@@ -289,9 +335,9 @@ function publishStatus(status) {
     sendToWindow(runtime.dragPreviewWindow, STATUS_CHANNEL, status);
   }
   if (status?.tone === 'idle') {
-    scheduleEdgePatrol();
+    scheduleIdleEffect();
   } else {
-    stopEdgePatrol();
+    stopIdleEffects();
   }
 }
 
@@ -315,9 +361,9 @@ function publishHover(hovered) {
     sendToWindow(runtime.dragPreviewWindow, HOVER_CHANNEL, runtime.latestHovered);
   }
   if (runtime.latestHovered) {
-    stopEdgePatrol();
+    stopIdleEffects();
   } else {
-    scheduleEdgePatrol();
+    scheduleIdleEffect();
   }
 }
 /** 显示当前活动任务；没有任务时显示空闲。 */
@@ -384,12 +430,11 @@ function clamp(value, minimum, maximum) {
   return Math.min(Math.max(value, minimum), maximum);
 }
 
-/** 判断当前是否满足十秒待命巡边条件。 */
-function canStartEdgePatrol() {
+/** 判断当前是否允许运行待机效果。 */
+function canRunIdleEffect() {
   const win = runtime.petWindow;
   return Boolean(
-    isEffectEnabled(EDGE_PATROL_EFFECT_ID)
-    && runtime.latestStatus?.tone === 'idle'
+    runtime.latestStatus?.tone === 'idle'
     && !runtime.dragState
     && !runtime.latestHovered
     && win
@@ -397,14 +442,27 @@ function canStartEdgePatrol() {
   );
 }
 
-/** 清理巡边启动倒计时。 */
-function clearEdgePatrolDelay() {
-  if (runtime.edgePatrolDelayTimer) {
-    clearTimeout(runtime.edgePatrolDelayTimer);
-    runtime.edgePatrolDelayTimer = null;
+/** 判断巡边效果当前是否可以继续运行。 */
+function canStartEdgePatrol() {
+  return runtime.activeIdleEffectId === EDGE_PATROL_EFFECT_ID
+    && canRunIdleEffect();
+}
+
+/** 清理待机效果启动倒计时。 */
+function clearIdleEffectDelay() {
+  if (runtime.idleEffectDelayTimer) {
+    clearTimeout(runtime.idleEffectDelayTimer);
+    runtime.idleEffectDelayTimer = null;
   }
 }
 
+/** 清理当前待机效果的十分钟时段计时。 */
+function clearIdleEffectDuration() {
+  if (runtime.idleEffectDurationTimer) {
+    clearTimeout(runtime.idleEffectDurationTimer);
+    runtime.idleEffectDurationTimer = null;
+  }
+}
 /** 判断二维坐标是否由两个有限数值组成。 */
 function isFinitePoint(point) {
   return Number.isFinite(point?.x) && Number.isFinite(point?.y);
@@ -475,10 +533,12 @@ function reportEdgePatrolFailure(reason, error = null, details = null) {
 /** 清除受污染的巡边状态，并按待命规则重新开始计时。 */
 function recoverEdgePatrol(reason, error = null, details = null) {
   reportEdgePatrolFailure(reason, error, details);
-  stopEdgePatrol();
-  scheduleEdgePatrol();
+  stopIdleEffects({ preserveForResume: false });
+  runtime.nextIdleEffectId = isEffectEnabled(EDGE_PATROL_EFFECT_ID)
+    ? EDGE_PATROL_EFFECT_ID
+    : getNextEnabledIdleEffectId(EDGE_PATROL_EFFECT_ID);
+  scheduleIdleEffect();
 }
-
 /** 按角色可见区域计算整个虚拟桌面的巡边坐标。 */
 function getEdgePatrolTravelBounds(workArea) {
   return {
@@ -579,7 +639,7 @@ function advanceEdgePatrol() {
   const state = runtime.edgePatrolState;
   if (!state) return;
   if (!canStartEdgePatrol()) {
-    stopEdgePatrol();
+    stopIdleEffects();
     return;
   }
   if (!isValidEdgePatrolState(state)) {
@@ -643,7 +703,6 @@ function advanceEdgePatrol() {
 
 /** 从当前位置走向最近竖边并开始顺时针巡边。 */
 function startEdgePatrol() {
-  runtime.edgePatrolDelayTimer = null;
   if (!canStartEdgePatrol() || runtime.edgePatrolState) return;
   const win = runtime.petWindow;
   let windowX;
@@ -690,9 +749,8 @@ function startEdgePatrol() {
   runtime.edgePatrolFrameTimer = setInterval(advanceEdgePatrol, EDGE_PATROL_FRAME_INTERVAL_MS);
 }
 
-/** 停止巡边及倒计时，并恢复当前任务状态动作。 */
+/** 停止巡边位移，并按需通知视觉层恢复状态动作。 */
 function stopEdgePatrol(options = {}) {
-  clearEdgePatrolDelay();
   if (runtime.edgePatrolFrameTimer) {
     clearInterval(runtime.edgePatrolFrameTimer);
     runtime.edgePatrolFrameTimer = null;
@@ -710,17 +768,133 @@ function stopEdgePatrol(options = {}) {
   schedulePositionSave();
 }
 
-/** 在持续空闲且无人交互十秒后启动巡边。 */
-function scheduleEdgePatrol() {
-  clearEdgePatrolDelay();
-  if (runtime.edgePatrolState || !canStartEdgePatrol()) return;
-  runtime.edgePatrolDelayTimer = setTimeout(startEdgePatrol, EDGE_PATROL_IDLE_DELAY_MS);
+/** 启动一个已启用的待机效果，并建立十分钟时段。 */
+function startIdleEffect(effectId) {
+  clearIdleEffectDelay();
+  if (
+    runtime.activeIdleEffectId
+    || !effectId
+    || !isEffectEnabled(effectId)
+    || !canRunIdleEffect()
+  ) {
+    return;
+  }
+
+  runtime.activeIdleEffectId = effectId;
+  runtime.nextIdleEffectId = effectId;
+  if (effectId === EDGE_PATROL_EFFECT_ID) {
+    startEdgePatrol();
+    if (
+      runtime.activeIdleEffectId !== effectId
+      || !runtime.edgePatrolState
+    ) {
+      return;
+    }
+  } else if (effectId === SLEEP_EFFECT_ID) {
+    publishMotion({
+      active: true,
+      animation: SLEEP_ANIMATION,
+      source: 'idle-effect',
+    });
+  } else {
+    runtime.activeIdleEffectId = null;
+    throw new Error(`未实现的桌宠待机效果: ${effectId}`);
+  }
+
+  clearIdleEffectDuration();
+  runtime.idleEffectDurationTimer = setTimeout(
+    completeIdleEffectPeriod,
+    IDLE_EFFECT_DURATION_MS,
+  );
 }
 
-/** 显示器布局变化后同步视觉画布，并按新虚拟桌面重新启动巡边。 */
+/** 完成当前十分钟时段，并立即切换到下一个已启用效果。 */
+function completeIdleEffectPeriod() {
+  runtime.idleEffectDurationTimer = null;
+  const currentEffectId = runtime.activeIdleEffectId;
+  if (!currentEffectId) return;
+
+  const nextEffectId = getNextEnabledIdleEffectId(currentEffectId);
+  if (!nextEffectId) {
+    stopIdleEffects({ preserveForResume: false });
+    return;
+  }
+  if (nextEffectId === currentEffectId) {
+    runtime.idleEffectDurationTimer = setTimeout(
+      completeIdleEffectPeriod,
+      IDLE_EFFECT_DURATION_MS,
+    );
+    return;
+  }
+
+  stopIdleEffects({ preserveForResume: false });
+  runtime.nextIdleEffectId = nextEffectId;
+  if (canRunIdleEffect()) {
+    startIdleEffect(nextEffectId);
+  } else {
+    scheduleIdleEffect();
+  }
+}
+
+/** 十秒待命结束后启动轮换队列中的下一个效果。 */
+function startScheduledIdleEffect() {
+  runtime.idleEffectDelayTimer = null;
+  if (runtime.activeIdleEffectId || !canRunIdleEffect()) return;
+  const effectId = isEffectEnabled(runtime.nextIdleEffectId)
+    ? runtime.nextIdleEffectId
+    : getNextEnabledIdleEffectId();
+  startIdleEffect(effectId);
+}
+
+/** 在持续空闲且无人交互十秒后启动待机效果。 */
+function scheduleIdleEffect() {
+  clearIdleEffectDelay();
+  if (
+    runtime.activeIdleEffectId
+    || !canRunIdleEffect()
+    || getEnabledIdleEffectIds().length === 0
+  ) {
+    return;
+  }
+  if (!isEffectEnabled(runtime.nextIdleEffectId)) {
+    runtime.nextIdleEffectId = getNextEnabledIdleEffectId();
+  }
+  runtime.idleEffectDelayTimer = setTimeout(
+    startScheduledIdleEffect,
+    IDLE_EFFECT_DELAY_MS,
+  );
+}
+
+/** 停止当前待机效果和全部计时器，并保留中断前的轮换位置。 */
+function stopIdleEffects(options = {}) {
+  clearIdleEffectDelay();
+  clearIdleEffectDuration();
+  const activeEffectId = runtime.activeIdleEffectId;
+  const preserveForResume = options.preserveForResume !== false;
+  if (preserveForResume && activeEffectId && isEffectEnabled(activeEffectId)) {
+    runtime.nextIdleEffectId = activeEffectId;
+  }
+  runtime.activeIdleEffectId = null;
+
+  if (activeEffectId === EDGE_PATROL_EFFECT_ID || runtime.edgePatrolState) {
+    stopEdgePatrol(options);
+    return;
+  }
+  if (activeEffectId === SLEEP_EFFECT_ID && options.publishStopped !== false) {
+    publishMotion({
+      active: false,
+      direction: null,
+      source: 'idle-effect',
+    });
+  }
+}
+
+/** 显示器布局变化后同步视觉画布，并保持当前巡边时段。 */
 function handleDisplayConfigurationChanged() {
-  const wasPatrolling = Boolean(runtime.edgePatrolState);
-  stopEdgePatrol();
+  const wasPatrolling = runtime.activeIdleEffectId === EDGE_PATROL_EFFECT_ID
+    && Boolean(runtime.edgePatrolState);
+  if (wasPatrolling) stopEdgePatrol();
+
   const win = runtime.petWindow;
   if (win && !win.isDestroyed()) {
     const [windowX, windowY] = win.getPosition();
@@ -728,10 +902,11 @@ function handleDisplayConfigurationChanged() {
   }
   if (wasPatrolling) {
     runtime.ctx?.logger.info('显示器布局发生变化，视觉画布和巡边范围已重新计算');
+    startEdgePatrol();
+  } else if (!runtime.activeIdleEffectId) {
+    scheduleIdleEffect();
   }
-  scheduleEdgePatrol();
 }
-
 /** 注册影响巡边工作区的显示器事件。 */
 function registerDisplayEvents() {
   if (runtime.displayEventsRegistered) return;
@@ -937,7 +1112,7 @@ function handleDragStart(event) {
   const win = runtime.petWindow;
   if (!win || win.isDestroyed()) return;
 
-  stopEdgePatrol();
+  stopIdleEffects();
   const [windowX, windowY] = win.getPosition();
   runtime.dragState = {
     windowX,
@@ -975,7 +1150,7 @@ function handleDragEnd(event, rawDelta) {
     }
   }
   if (state.moving) publishMotion({ active: false, direction: null });
-  scheduleEdgePatrol();
+  scheduleIdleEffect();
 }
 
 /** 指针捕获意外终止时将视觉层恢复到拖动起点。 */
@@ -985,7 +1160,7 @@ function handleDragCancel(event) {
   runtime.dragState = null;
   showDragPreview(state.windowX, state.windowY);
   if (state.moving) publishMotion({ active: false, direction: null });
-  scheduleEdgePatrol();
+  scheduleIdleEffect();
 }
 
 /** 转发透明输入层的鼠标悬停状态。 */
@@ -1132,7 +1307,7 @@ function cleanupRuntime() {
   unregisterDragIpc();
   unregisterDisplayEvents();
   runtime.dragState = null;
-  stopEdgePatrol({ publishStopped: false });
+  stopIdleEffects({ publishStopped: false, preserveForResume: false });
 
   if (runtime.positionTimer) {
     clearTimeout(runtime.positionTimer);
@@ -1163,6 +1338,8 @@ function cleanupRuntime() {
 
   runtime.ctx = null;
   runtime.latestStatus = createIdleStatus();
+  runtime.activeIdleEffectId = null;
+  runtime.nextIdleEffectId = null;
   runtime.enabledEffectIds = new Set();
 }
 /** 主程序窗口关闭时同步清理桌宠，避免插件窗口阻止应用退出。 */

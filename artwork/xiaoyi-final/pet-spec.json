@@ -29,12 +29,36 @@
     "cellWidth": 192,
     "cellHeight": 208,
     "atlasColumns": 8,
-    "atlasRows": 34,
+    "atlasRows": 36,
     "requirements": [
       "生成任何新动作时必须附带 canonicalBase",
       "保持脸部、比例、材质、配色、腹部标志和整体轮廓一致",
       "角色必须完整位于单元格内",
       "禁止文字、场景、阴影、光晕和脱离角色的特效"
+    ]
+  },
+  "idleEffectRotation": {
+    "idleDelayMs": 10000,
+    "effectDurationMs": 600000,
+    "defaultEnabled": [
+      "edge-patrol",
+      "sleeping"
+    ],
+    "order": [
+      "edge-patrol",
+      "sleeping"
+    ]
+  },
+  "sleepingAnimation": {
+    "id": "sleeping",
+    "startRow": 34,
+    "frames": 16,
+    "durationMs": 260,
+    "semantics": "闭眼安静入睡，身体轻微呼吸，头顶三个固定圆球按呼吸节奏依次起伏以表现轻柔鼾声",
+    "constraints": [
+      "三个头顶圆球必须始终保持三个，不得消失、合并、换位或变成额外气泡",
+      "不得增加 Z 字、音符、文字、枕头、床、毯子或脱离角色的特效",
+      "循环首尾必须自然衔接，整体保持低干扰"
     ]
   },
   "edgePatrolAnimations": {

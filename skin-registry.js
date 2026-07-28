@@ -11,7 +11,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, () => {
   const atlas = Object.freeze({
     columns: 8,
-    rows: 34,
+    rows: 36,
   });
 
   const skins = Object.freeze([
@@ -21,6 +21,13 @@
       description: '易标默认的蓝色小易形象。',
       spriteSheet: 'assets/pet-spritesheet.webp',
       preview: 'assets/icon.png',
+    }),
+    Object.freeze({
+      id: 'sacred-sword-singer',
+      name: '圣剑歌手',
+      description: '黑发黑衣、手持紫色麦克风的毛绒小歌手。',
+      spriteSheet: 'assets/skins/sacred-sword-singer/spritesheet.webp',
+      preview: 'assets/skins/sacred-sword-singer/preview.png',
     }),
   ]);
 

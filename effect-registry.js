@@ -13,7 +13,13 @@
     Object.freeze({
       id: 'edge-patrol',
       name: '瞎溜达',
-      description: '持续待命 10 秒后，走向屏幕边缘并沿多屏桌面顺时针巡边。',
+      description: '走向屏幕边缘，并沿多屏桌面顺时针巡边。',
+      defaultEnabled: true,
+    }),
+    Object.freeze({
+      id: 'sleeping',
+      name: '睡觉',
+      description: '安静入睡，并用低干扰的呼吸与轻微身体起伏表现睡眠节奏。',
       defaultEnabled: true,
     }),
   ]);

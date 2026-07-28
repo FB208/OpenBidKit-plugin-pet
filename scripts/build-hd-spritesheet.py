@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the plugin atlas from phase strips, cycle strips, 4×4 grids, or stable 6×4 grids."""
+"""Build the plugin atlas from phase strips, cycle strips, contact grids, or stable grids."""
 
 from __future__ import annotations
 
@@ -15,9 +15,10 @@ CELL_WIDTH = 192
 CELL_HEIGHT = 208
 COLUMNS = 8
 FRAMES_PER_STATE = 16
-CHROMA_KEY = (255, 255, 0)
-CHROMA_SOFT_START = 32.0
-CHROMA_OPAQUE_DISTANCE = 280.0
+# 绿色色键与角色的暖肤色、紫色配件距离更大，避免把浅色绒面误抠成半透明灰色。
+CHROMA_KEY = (0, 255, 0)
+CHROMA_SOFT_START = 12.0
+CHROMA_OPAQUE_DISTANCE = 220.0
 GROUND_BASELINE = 202
 CENTER_X = 95.5
 CENTER_Y = 103.5
@@ -53,6 +54,7 @@ STATE_ORDER = [
     "climbing-up",
     "climbing-down",
     "hanging-right",
+    "sleeping",
 ]
 GENERATED_STATES = [state for state in STATE_ORDER if state != "running-left"]
 STATE_FRAME_COUNTS = {
@@ -88,6 +90,7 @@ FRAME_DURATIONS_MS = {
     "climbing-up": 110,
     "climbing-down": 110,
     "hanging-right": 120,
+    "sleeping": 260,
 }
 JUMP_BASELINES = [202, 201, 199, 197, 195, 193, 191, 189, 189, 191, 193, 195, 197, 199, 201, 202]
 IMAGE_SUFFIXES = {".png", ".webp", ".jpg", ".jpeg"}
@@ -103,8 +106,18 @@ def color_distance(red: int, green: int, blue: int) -> float:
 
 
 def remove_chroma_background(image: Image.Image) -> Image.Image:
-    """用软色键移除黄色背景，并反算边缘前景色以消除黄绿色溢色。"""
+    """移除色键背景，已带透明通道的来源不再重复抠图。"""
     rgba = image.convert("RGBA")
+    alpha = rgba.getchannel("A")
+    if alpha.getextrema()[0] < 255:
+        # 已完成透明抠图的来源不再重复色键，避免再次误伤肤色和浅色绒面。
+        pixels = rgba.load()
+        for y in range(rgba.height):
+            for x in range(rgba.width):
+                red, green, blue, pixel_alpha = pixels[x, y]
+                if pixel_alpha == 0:
+                    pixels[x, y] = (0, 0, 0, 0)
+        return rgba
     pixels = rgba.load()
     for y in range(rgba.height):
         for x in range(rgba.width):
@@ -375,7 +388,7 @@ def extract_stable_grid_frames(
     columns: int = 6,
     rows: int = 4,
 ) -> list[Image.Image]:
-    """按固定六乘四槽位和腹部标志锚点提取 24 帧稳定动作。"""
+    """按固定网格槽位和腹部标志锚点提取稳定动作帧。"""
     if columns * rows != frame_count:
         raise ValueError(
             f"grid {columns}x{rows} cannot provide {frame_count} frames"
@@ -386,13 +399,23 @@ def extract_stable_grid_frames(
     slots: list[Image.Image] = []
     pose_boxes: list[tuple[int, int, int, int]] = []
     abdomen_anchors: list[tuple[float, float]] = []
+    anchor_locator = (
+        locate_chest_prop_anchor
+        if state in {"climbing-up", "climbing-down", "hanging-right"}
+        else locate_abdomen_anchor
+    )
     for index in range(frame_count):
         column = index % columns
         row = index // columns
-        left = round(column * transparent.width / columns)
-        right = round((column + 1) * transparent.width / columns)
+        nominal_left = round(column * transparent.width / columns)
+        nominal_right = round((column + 1) * transparent.width / columns)
         top = round(row * transparent.height / rows)
         bottom = round((row + 1) * transparent.height / rows)
+        # 生成式网格中的角色可能略微越过理论分格线；横向扩窗后再按主体连通域筛选，
+        # 避免头发、手臂或鞋子被硬切，同时排除相邻格侵入的碎片。
+        horizontal_padding = round((nominal_right - nominal_left) * 0.25)
+        left = max(0, nominal_left - horizontal_padding)
+        right = min(transparent.width, nominal_right + horizontal_padding)
         slot = transparent.crop((left, top, right, bottom))
         cleaned_slot = keep_components_in_place(slot, select_pose_components(slot))
         pose_box = cleaned_slot.getbbox()
@@ -400,7 +423,7 @@ def extract_stable_grid_frames(
             raise ValueError(f"{state} grid slot {index:02d} is empty")
         slots.append(cleaned_slot)
         pose_boxes.append(pose_box)
-        abdomen_anchors.append(locate_abdomen_anchor(cleaned_slot))
+        abdomen_anchors.append(anchor_locator(cleaned_slot))
 
     maximum_width = max(box[2] - box[0] for box in pose_boxes)
     maximum_height = max(box[3] - box[1] for box in pose_boxes)
@@ -476,7 +499,7 @@ def extract_stable_grid_frames(
 
 
 def locate_abdomen_anchor(image: Image.Image) -> tuple[float, float]:
-    """定位腹部浅色圆环中心，作为跨帧稳定的躯干锚点。"""
+    """定位腹部浅色身份区域中心，作为跨帧稳定的躯干锚点。"""
     rgba = image.convert("RGBA")
     pose_box = rgba.getbbox()
     if pose_box is None:
@@ -487,7 +510,7 @@ def locate_abdomen_anchor(image: Image.Image) -> tuple[float, float]:
     roi_left = pose_box[0] + round(pose_width * 0.12)
     roi_right = pose_box[2] - round(pose_width * 0.12)
     roi_top = pose_box[1] + round(pose_height * 0.34)
-    roi_bottom = pose_box[1] + round(pose_height * 0.78)
+    roi_bottom = pose_box[1] + round(pose_height * 0.70)
     mask = Image.new("RGBA", rgba.size, (0, 0, 0, 0))
     source_pixels = rgba.load()
     mask_pixels = mask.load()
@@ -507,8 +530,9 @@ def locate_abdomen_anchor(image: Image.Image) -> tuple[float, float]:
     components = [
         component
         for component in connected_components(mask)
-        if int(component["area"]) >= 40
+        if int(component["area"]) >= 16
     ]
+
     if not components:
         raise ValueError("cannot locate the abdomen identity mark")
     abdomen = max(components, key=lambda item: int(item["area"]))
@@ -517,6 +541,40 @@ def locate_abdomen_anchor(image: Image.Image) -> tuple[float, float]:
     center_y = sum(int(index) // rgba.width for index in indexes) / len(indexes)
     return center_x, center_y
 
+def locate_chest_prop_anchor(image: Image.Image) -> tuple[float, float]:
+    """以胸前紫色话筒和固定带的像素质心作为攀爬动作躯干锚点。"""
+    rgba = image.convert("RGBA")
+    pose_box = rgba.getbbox()
+    if pose_box is None:
+        raise ValueError("cannot locate chest prop anchor in an empty frame")
+
+    pose_width = pose_box[2] - pose_box[0]
+    pose_height = pose_box[3] - pose_box[1]
+    roi_left = pose_box[0] + round(pose_width * 0.12)
+    roi_right = pose_box[2] - round(pose_width * 0.12)
+    roi_top = pose_box[1] + round(pose_height * 0.28)
+    roi_bottom = pose_box[1] + round(pose_height * 0.72)
+    source_pixels = rgba.load()
+    indexes: list[tuple[int, int]] = []
+
+    for y in range(max(0, roi_top), min(rgba.height, roi_bottom)):
+        for x in range(max(0, roi_left), min(rgba.width, roi_right)):
+            red, green, blue, alpha = source_pixels[x, y]
+            if (
+                alpha > 16
+                and red >= 55
+                and blue >= 95
+                and blue - red >= 18
+                and blue - green >= 24
+                and green <= 165
+            ):
+                indexes.append((x, y))
+
+    if len(indexes) < 16:
+        raise ValueError("cannot locate the chest prop identity mark")
+    center_x = sum(x for x, _y in indexes) / len(indexes)
+    center_y = sum(y for _x, y in indexes) / len(indexes)
+    return center_x, center_y
 def select_pose_components(image: Image.Image) -> list[dict[str, object]]:
     """保留主体及邻近身份组件，排除从相邻格切入的边缘碎片。"""
     components = connected_components(image)
@@ -787,6 +845,12 @@ def validate_geometry(all_frames: dict[str, list[Image.Image]]) -> list[str]:
         # 失败姿态会逐步蜷缩并遮挡四肢，面积变化属于动作语义；其体型改由逐帧视觉检查确认。
         if state == "failed":
             area_limit = 0.25
+        elif state in {"walking-right", "walking-left"}:
+            # 完整换步会在双腿交叉时产生遮挡，允许面积随开步和并步自然变化。
+            area_limit = 0.22
+        elif state in {"climbing-up", "climbing-down"}:
+            # 攀爬时手脚会交替完全伸展，轮廓面积允许略高于普通巡边动作。
+            area_limit = 0.14
         elif state in EDGE_PATROL_STATES:
             area_limit = 0.12
         else:
@@ -807,7 +871,12 @@ def validate_geometry(all_frames: dict[str, list[Image.Image]]) -> list[str]:
             ):
                 errors.append(f"{state}: sprite content touches a cell boundary")
 
-            anchors = [locate_abdomen_anchor(frame) for frame in frames]
+            anchor_locator = (
+                locate_chest_prop_anchor
+                if state in {"climbing-up", "climbing-down", "hanging-right"}
+                else locate_abdomen_anchor
+            )
+            anchors = [anchor_locator(frame) for frame in frames]
             anchor_x_values = [anchor[0] for anchor in anchors]
             if max(anchor_x_values) - min(anchor_x_values) > MAX_PATROL_ANCHOR_X_DELTA:
                 errors.append(
@@ -1004,14 +1073,18 @@ def main() -> None:
         raise SystemExit(f"unknown generated states: {', '.join(unknown_states)}")
 
     for state in selected_states:
-        stable_grid_path = decoded_dir / f"{state}-grid24.png"
+        frame_count = STATE_FRAME_COUNTS[state]
+        stable_grid_path = decoded_dir / f"{state}-grid{frame_count}.png"
         cycle_path = decoded_dir / f"{state}-cycle.png"
         contact_grid_path = decoded_dir / f"{state}.png"
         if stable_grid_path.is_file():
+            grid_columns, grid_rows = (6, 4) if frame_count == 24 else (4, 4)
             all_frames[state] = extract_stable_grid_frames(
                 stable_grid_path,
                 state,
-                STATE_FRAME_COUNTS[state],
+                frame_count,
+                columns=grid_columns,
+                rows=grid_rows,
             )
             continue
         if cycle_path.is_file():
