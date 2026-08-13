@@ -24,6 +24,7 @@ const AI_CHAT_HEIGHT_CHANNEL = 'plugin:openbidkit-pet:ai-chat-height';
 const AI_CHAT_SEND_CHANNEL = 'plugin:openbidkit-pet:ai-chat-send';
 const AI_CHAT_CLOSE_CHANNEL = 'plugin:openbidkit-pet:ai-chat-close';
 const AI_BUTTON_CLICK_CHANNEL = 'plugin:openbidkit-pet:ai-button-click';
+const AI_HOVER_CHANNEL = 'plugin:openbidkit-pet:ai-hover';
 
 contextBridge.exposeInMainWorld('petStatus', {
   /** 订阅桌宠状态变化，并返回取消订阅函数。 */
@@ -200,7 +201,12 @@ contextBridge.exposeInMainWorld('petAiChat', {
 });
 
 contextBridge.exposeInMainWorld('petAiButton', {
-  /** 点击 AI 按钮，切换对话框开关。 */
+  /** 鼠标进入/离开气泡内 AI 图标时切换视觉层鼠标穿透。 */
+  setInteractive(hovering) {
+    ipcRenderer.send(AI_HOVER_CHANNEL, Boolean(hovering));
+  },
+
+  /** 点击 AI 图标，切换对话框开关。 */
   click() {
     ipcRenderer.send(AI_BUTTON_CLICK_CHANNEL);
   },

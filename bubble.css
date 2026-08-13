@@ -73,48 +73,43 @@ body {
   -webkit-line-clamp: 2;
 }
 
-.bubble__icon {
+/* 气泡内唯一可点击元素：视觉层经 forward 穿透模式在悬停时恢复鼠标命中。 */
+.bubble__ai-button {
   display: flex;
   width: 32px;
   height: 32px;
   flex: 0 0 32px;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 70%);
   border-radius: 50%;
-  background: var(--accent-background);
-  color: var(--accent);
-  font-family: "Segoe UI Symbol", "Microsoft YaHei UI", sans-serif;
-  font-size: 18px;
-  font-weight: 800;
-  line-height: 1;
+  background: linear-gradient(135deg, #6366f1, #0ea5e9);
+  box-shadow:
+    0 3px 8px rgb(15 23 42 / 22%),
+    0 1px 2px rgb(15 23 42 / 10%);
+  color: #fff;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.bubble__ai-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.bubble__ai-button:hover {
+  box-shadow:
+    0 5px 12px rgb(15 23 42 / 28%),
+    0 2px 4px rgb(15 23 42 / 12%);
+  transform: scale(1.1);
+}
+
+.bubble__ai-button:active {
+  transform: scale(0.95);
 }
 
 .bubble[hidden] {
   display: none;
-}
-
-.bubble[data-tone="running"] {
-  --accent: #0284c7;
-  --accent-background: #e0f2fe;
-}
-
-.bubble[data-tone="running"] .bubble__icon {
-  padding-bottom: 7px;
-  font-size: 14px;
-  letter-spacing: 1px;
-}
-
-.bubble[data-tone="paused"] {
-  --accent: #d97706;
-  --accent-background: #fef3c7;
-}
-
-.bubble[data-tone="success"] {
-  --accent: #16a34a;
-  --accent-background: #dcfce7;
-}
-
-.bubble[data-tone="error"] {
-  --accent: #e11d48;
-  --accent-background: #ffe4e6;
 }

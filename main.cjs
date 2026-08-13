@@ -28,6 +28,7 @@ const AI_CHAT_HEIGHT_CHANNEL = `plugin:${PLUGIN_ID}:ai-chat-height`;
 const AI_CHAT_SEND_CHANNEL = `plugin:${PLUGIN_ID}:ai-chat-send`;
 const AI_CHAT_CLOSE_CHANNEL = `plugin:${PLUGIN_ID}:ai-chat-close`;
 const AI_BUTTON_CLICK_CHANNEL = `plugin:${PLUGIN_ID}:ai-button-click`;
+const AI_HOVER_CHANNEL = `plugin:${PLUGIN_ID}:ai-hover`;
 const ENABLED_EFFECT_IDS_CONFIG_KEY = 'enabledEffectIds';
 const EDGE_PATROL_EFFECT_ID = 'edge-patrol';
 const SLEEP_EFFECT_ID = 'sleeping';
@@ -49,7 +50,6 @@ const INTERACTIVE_WINDOW_WIDTH = 420;
 const INTERACTIVE_WINDOW_DEFAULT_HEIGHT = 320;
 const INTERACTIVE_WINDOW_MIN_HEIGHT = 160;
 const INTERACTIVE_WINDOW_GAP = 10;
-const AI_BUTTON_SIZE = 40;
 const AI_CHAT_REFRESH_DELAY_MS = 300;
 const TRANSIENT_NOTICE_DURATION_MS = 4000;
 const WINDOW_MARGIN = 24;
@@ -95,7 +95,6 @@ const runtime = {
   agentQuestionWindow: null,
   outlineSelectionWindow: null,
   aiChatWindow: null,
-  aiButtonWindow: null,
   petWindow: null,
   hostWindow: null,
   unsubscribeTask: null,
@@ -546,24 +545,6 @@ function syncInteractiveWindowPositions() {
   if (runtime.latestAgentQuestion) positionInteractiveWindow(runtime.agentQuestionWindow);
   if (getVisibleOutlineSelection()) positionInteractiveWindow(runtime.outlineSelectionWindow);
   if (isAiChatVisible()) positionInteractiveWindow(runtime.aiChatWindow);
-  positionAiButtonWindow();
-}
-
-/** 将 AI 按钮小窗贴在桌宠右上角，并限制在当前工作区内。 */
-function positionAiButtonWindow() {
-  const win = runtime.aiButtonWindow;
-  if (!win || win.isDestroyed()) return;
-  const petBounds = getPetBounds();
-  if (!petBounds) return;
-  const { workArea } = screen.getDisplayMatching(petBounds);
-  const desiredX = petBounds.x + PET_WINDOW_WIDTH - PET_SPRITE_INSET_X
-    - Math.round(AI_BUTTON_SIZE / 2);
-  const desiredY = petBounds.y + PET_SPRITE_INSET_Y - Math.round(AI_BUTTON_SIZE / 2);
-  win.setPosition(
-    clamp(desiredX, workArea.x, workArea.x + workArea.width - AI_BUTTON_SIZE),
-    clamp(desiredY, workArea.y, workArea.y + workArea.height - AI_BUTTON_SIZE),
-  );
-  win.moveTop();
 }
 
 /** 将最新 Agent 问题同步到问答窗口并调度显隐。 */
@@ -1675,10 +1656,22 @@ function handleAiChatClose(event) {
   closeAiChat();
 }
 
-/** 用户点击桌宠旁的 AI 按钮。 */
+/** 用户点击气泡内的 AI 图标。 */
 function handleAiButtonClick(event) {
-  if (!isWindowSender(event, runtime.aiButtonWindow)) return;
+  if (!isDragPreviewWindowSender(event)) return;
   toggleAiChat();
+}
+
+/** 悬停气泡内 AI 图标时临时恢复视觉层鼠标命中，离开后恢复整层穿透。 */
+function handleAiHover(event, hovering) {
+  if (!isDragPreviewWindowSender(event)) return;
+  const win = runtime.dragPreviewWindow;
+  if (!win || win.isDestroyed()) return;
+  if (hovering) {
+    win.setIgnoreMouseEvents(false);
+  } else {
+    win.setIgnoreMouseEvents(true, { forward: true });
+  }
 }
 
 /** “稍后处理”：停止倒计时并在本任务内不再自动弹出目录选择气泡。 */
@@ -1713,6 +1706,7 @@ function registerDragIpc() {
   ipcMain.on(AI_CHAT_HEIGHT_CHANNEL, handleAiChatHeight);
   ipcMain.on(AI_CHAT_CLOSE_CHANNEL, handleAiChatClose);
   ipcMain.on(AI_BUTTON_CLICK_CHANNEL, handleAiButtonClick);
+  ipcMain.on(AI_HOVER_CHANNEL, handleAiHover);
   ipcMain.handle(AI_CHAT_SEND_CHANNEL, handleAiChatSend);
   runtime.dragIpcRegistered = true;
 }
@@ -1736,6 +1730,7 @@ function unregisterDragIpc() {
   ipcMain.removeListener(AI_CHAT_HEIGHT_CHANNEL, handleAiChatHeight);
   ipcMain.removeListener(AI_CHAT_CLOSE_CHANNEL, handleAiChatClose);
   ipcMain.removeListener(AI_BUTTON_CLICK_CHANNEL, handleAiButtonClick);
+  ipcMain.removeListener(AI_HOVER_CHANNEL, handleAiHover);
   ipcMain.removeHandler(AI_CHAT_SEND_CHANNEL);
   runtime.dragIpcRegistered = false;
 }
@@ -1798,8 +1793,6 @@ function createPetWindow(ctx) {
     if (selectionWindow && !selectionWindow.isDestroyed()) selectionWindow.close();
     const chatWindow = runtime.aiChatWindow;
     if (chatWindow && !chatWindow.isDestroyed()) chatWindow.close();
-    const buttonWindow = runtime.aiButtonWindow;
-    if (buttonWindow && !buttonWindow.isDestroyed()) buttonWindow.close();
   });
   void win.loadFile(path.join(__dirname, 'drag-handle.html'));
   return win;
@@ -1834,7 +1827,8 @@ function createDragPreviewWindow(ctx, petBounds) {
 
   win.setMenuBarVisibility(false);
   win.setAlwaysOnTop(true, 'screen-saver');
-  win.setIgnoreMouseEvents(true);
+  // forward 模式：整层穿透但转发 mousemove，气泡内 AI 图标悬停时临时恢复命中。
+  win.setIgnoreMouseEvents(true, { forward: true });
   win.webContents.on('did-finish-load', () => {
     if (runtime.dragPreviewWindow !== win) return;
     runtime.dragPreviewRendererReady = true;
@@ -1971,47 +1965,6 @@ function ensureAiChatWindow() {
   return runtime.aiChatWindow;
 }
 
-/** 创建桌宠旁常驻的圆形 AI 按钮小窗。 */
-function createAiButtonWindow(ctx) {
-  const win = ctx.createWindow({
-    width: AI_BUTTON_SIZE,
-    height: AI_BUTTON_SIZE,
-    show: false,
-    frame: false,
-    transparent: true,
-    backgroundColor: '#00000000',
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    focusable: false,
-    resizable: false,
-    movable: false,
-    minimizable: false,
-    maximizable: false,
-    fullscreenable: false,
-    hasShadow: false,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.cjs'),
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: false,
-    },
-  });
-
-  win.setMenuBarVisibility(false);
-  win.setAlwaysOnTop(true, 'screen-saver');
-  win.webContents.on('did-finish-load', () => {
-    if (runtime.aiButtonWindow !== win || win.isDestroyed()) return;
-    positionAiButtonWindow();
-    win.showInactive();
-    win.moveTop();
-  });
-  win.on('closed', () => {
-    if (runtime.aiButtonWindow !== win) return;
-    runtime.aiButtonWindow = null;
-  });
-  void win.loadFile(path.join(__dirname, 'ai-button.html'));
-  return win;
-}
 /** 清理插件持有的窗口、订阅和计时器。 */
 function cleanupRuntime() {
   clearTerminalTimer();
@@ -2073,10 +2026,6 @@ function cleanupRuntime() {
   runtime.aiChatWorkspace = null;
   if (chatWindow && !chatWindow.isDestroyed()) chatWindow.close();
 
-  const buttonWindow = runtime.aiButtonWindow;
-  runtime.aiButtonWindow = null;
-  if (buttonWindow && !buttonWindow.isDestroyed()) buttonWindow.close();
-
   const inputWindow = runtime.petWindow;
   runtime.petWindow = null;
   if (inputWindow && !inputWindow.isDestroyed()) inputWindow.close();
@@ -2116,8 +2065,6 @@ module.exports = {
     if (runtime.hostWindow) {
       runtime.hostWindow.once('closed', handleHostWindowClosed);
     }
-
-    runtime.aiButtonWindow = createAiButtonWindow(ctx);
 
     publishLatestActiveOrIdle();
     runtime.unsubscribeTask = ctx.onTaskEvent(handleTaskEvent);
