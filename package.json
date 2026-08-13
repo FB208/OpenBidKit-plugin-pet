@@ -1,8 +1,8 @@
 {
     "name":  "openbidkit-pet",
-    "version":  "0.6.2",
+    "version":  "1.2.3",
     "private":  true,
-    "description":  "易标投标工具箱动画悬浮桌宠插件",
+    "description":  "支持任务状态展示和 Agent 快捷回答的易标动画悬浮桌宠插件",
     "author":  "FB208",
     "main":  "main.cjs",
     "scripts":  {

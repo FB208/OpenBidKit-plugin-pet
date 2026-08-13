@@ -12,6 +12,7 @@
 - [Main 进程 Context API](#main-进程-context-api)
   - [基础 API](#基础-api)
   - [任务进度 API](#任务进度-api)
+  - [Agent 问答 API](#agent-问答-api)
   - [配置存储 API](#配置存储-api)
   - [窗口管理 API](#窗口管理-api)
   - [日志 API](#日志-api)
@@ -262,6 +263,34 @@ getRejectionCheckState(): RejectionCheckState | null
 **返回值：** `RejectionCheckState | null` - 废标检查工作区状态
 
 **说明：** 获取废标检查任务的状态，包括检查项、检查结果等。
+
+---
+
+### Agent 问答 API
+
+#### `ctx.getPendingAgentQuestion()`
+
+读取当前进程中正在等待回答的 Agent 问题；没有问题时返回 `null`。
+
+#### `ctx.onAgentQuestion(callback)`
+
+订阅 Agent 问题状态。问题出现或自动回答状态变化时返回完整问题，问题被任一入口回答或任务结束时返回 `null`。返回值为取消订阅函数。
+
+#### `ctx.answerAgentQuestion(payload)`
+
+提交答案并恢复 Agent 执行：
+
+```javascript
+ctx.answerAgentQuestion({
+  question_id: question.question_id,
+  option_id: option.id,
+  custom_answer: option.custom ? '具体要求' : undefined,
+});
+```
+
+#### `ctx.suppressAgentQuestionAutoAnswer(payload)`
+
+用户主动操作选项后，停止当前问题的自动回答倒计时，不修改全局自动回答设置。
 
 ---
 
@@ -634,6 +663,7 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
 |------|------|-----------|
 | `task:read` | 读取任务状态 | `getActiveTasks()`, `getTechnicalPlanState()`, `getDuplicateCheckState()`, `getRejectionCheckState()` |
 | `task:subscribe` | 订阅任务事件 | `onTaskEvent()` |
+| `agent:question` | 响应 Agent 问答 | `getPendingAgentQuestion()`, `onAgentQuestion()`, `answerAgentQuestion()`, `suppressAgentQuestionAutoAnswer()` |
 | `window:create` | 创建独立窗口 | `createWindow()` |
 
 ### 无需权限的 API
@@ -720,6 +750,12 @@ interface PluginContext {
   
   // 事件 API（需要 task:subscribe 权限）
   onTaskEvent?: (callback: (event: TaskEvent) => void) => () => void;
+
+  // Agent 问答 API
+  getPendingAgentQuestion?: () => AgentQuestion | null;
+  onAgentQuestion?: (callback: (question: AgentQuestion | null) => void) => () => void;
+  answerAgentQuestion?: (payload: AgentQuestionAnswerPayload) => { success: boolean };
+  suppressAgentQuestionAutoAnswer?: (payload: { question_id: string }) => { success: boolean };
   
   // 窗口 API（需要 window:create 权限）
   createWindow?: (options: BrowserWindowConstructorOptions) => BrowserWindow;
@@ -745,6 +781,34 @@ interface PluginModule {
    * 插件停用时调用
    */
   deactivate(): Promise<void> | void;
+}
+```
+
+### AgentQuestion
+
+```typescript
+interface AgentQuestionOption {
+  id: string;
+  label: string;
+  description: string;
+  recommended: boolean;
+  custom: boolean;
+}
+
+interface AgentQuestion {
+  question_id: string;
+  task_id: string;
+  task_title: string;
+  question: string;
+  options: AgentQuestionOption[];
+  asked_at: string;
+  auto_answer_at?: string;
+}
+
+interface AgentQuestionAnswerPayload {
+  question_id: string;
+  option_id: string;
+  custom_answer?: string;
 }
 ```
 
