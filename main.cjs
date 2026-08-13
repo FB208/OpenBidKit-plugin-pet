@@ -18,6 +18,11 @@ const AGENT_QUESTION_CHANNEL = `plugin:${PLUGIN_ID}:agent-question`;
 const AGENT_QUESTION_HEIGHT_CHANNEL = `plugin:${PLUGIN_ID}:agent-question-height`;
 const AGENT_QUESTION_ANSWER_CHANNEL = `plugin:${PLUGIN_ID}:agent-question-answer`;
 const AGENT_QUESTION_SUPPRESS_CHANNEL = `plugin:${PLUGIN_ID}:agent-question-suppress`;
+const OUTLINE_SELECTION_CHANNEL = `plugin:${PLUGIN_ID}:outline-selection`;
+const OUTLINE_SELECTION_HEIGHT_CHANNEL = `plugin:${PLUGIN_ID}:outline-selection-height`;
+const OUTLINE_SELECTION_CONFIRM_CHANNEL = `plugin:${PLUGIN_ID}:outline-selection-confirm`;
+const OUTLINE_SELECTION_SUPPRESS_CHANNEL = `plugin:${PLUGIN_ID}:outline-selection-suppress`;
+const OUTLINE_SELECTION_DISMISS_CHANNEL = `plugin:${PLUGIN_ID}:outline-selection-dismiss`;
 const ENABLED_EFFECT_IDS_CONFIG_KEY = 'enabledEffectIds';
 const EDGE_PATROL_EFFECT_ID = 'edge-patrol';
 const SLEEP_EFFECT_ID = 'sleeping';
@@ -35,10 +40,10 @@ const BUBBLE_WINDOW_HEIGHT = 136;
 const BUBBLE_WINDOW_GAP = 8;
 const BUBBLE_CONTENT_INSET = 32;
 const BUBBLE_EDGE_MARGIN = 8;
-const AGENT_QUESTION_WINDOW_WIDTH = 420;
-const AGENT_QUESTION_WINDOW_DEFAULT_HEIGHT = 320;
-const AGENT_QUESTION_WINDOW_MIN_HEIGHT = 160;
-const AGENT_QUESTION_WINDOW_GAP = 10;
+const INTERACTIVE_WINDOW_WIDTH = 420;
+const INTERACTIVE_WINDOW_DEFAULT_HEIGHT = 320;
+const INTERACTIVE_WINDOW_MIN_HEIGHT = 160;
+const INTERACTIVE_WINDOW_GAP = 10;
 const WINDOW_MARGIN = 24;
 const POSITION_SAVE_DELAY_MS = 200;
 const DRAG_MOVEMENT_THRESHOLD = 2;
@@ -79,6 +84,7 @@ const runtime = {
   ctx: null,
   dragPreviewWindow: null,
   agentQuestionWindow: null,
+  outlineSelectionWindow: null,
   petWindow: null,
   hostWindow: null,
   unsubscribeTask: null,
@@ -96,12 +102,15 @@ const runtime = {
   dragIpcRegistered: false,
   dragPreviewRendererReady: false,
   agentQuestionRendererReady: false,
+  outlineSelectionRendererReady: false,
   dragPreviewDisplayId: null,
   dragPreviewTargetBounds: null,
   enabledEffectIds: new Set(),
   latestSkin: null,
   latestStatus: createIdleStatus(),
   latestAgentQuestion: null,
+  latestOutlineSelection: null,
+  outlineSelectionDismissedTaskId: null,
   latestDragPreview: null,
   latestHovered: false,
 };
@@ -407,13 +416,13 @@ function getPetBounds() {
   return { x, y, width: PET_WINDOW_WIDTH, height: PET_WINDOW_HEIGHT };
 }
 
-/** 计算问答气泡在桌宠附近且不越出工作区的位置。 */
-function calculateAgentQuestionWindowPosition(petBounds, windowHeight) {
+/** 计算交互气泡在桌宠附近且不越出工作区的位置。 */
+function calculateInteractiveWindowPosition(petBounds, windowWidth, windowHeight) {
   const { workArea } = screen.getDisplayMatching(petBounds);
   const minimumX = workArea.x + BUBBLE_EDGE_MARGIN;
   const maximumX = Math.max(
     minimumX,
-    workArea.x + workArea.width - AGENT_QUESTION_WINDOW_WIDTH - BUBBLE_EDGE_MARGIN,
+    workArea.x + workArea.width - windowWidth - BUBBLE_EDGE_MARGIN,
   );
   const minimumY = workArea.y + BUBBLE_EDGE_MARGIN;
   const maximumY = Math.max(
@@ -421,9 +430,9 @@ function calculateAgentQuestionWindowPosition(petBounds, windowHeight) {
     workArea.y + workArea.height - windowHeight - BUBBLE_EDGE_MARGIN,
   );
   const desiredX = petBounds.x
-    + Math.round((PET_WINDOW_WIDTH - AGENT_QUESTION_WINDOW_WIDTH) / 2);
-  const aboveY = petBounds.y - windowHeight - AGENT_QUESTION_WINDOW_GAP;
-  const belowY = petBounds.y + PET_WINDOW_HEIGHT + AGENT_QUESTION_WINDOW_GAP;
+    + Math.round((PET_WINDOW_WIDTH - windowWidth) / 2);
+  const aboveY = petBounds.y - windowHeight - INTERACTIVE_WINDOW_GAP;
+  const belowY = petBounds.y + PET_WINDOW_HEIGHT + INTERACTIVE_WINDOW_GAP;
   const desiredY = aboveY >= minimumY
     ? aboveY
     : (belowY <= maximumY ? belowY : clamp(aboveY, minimumY, maximumY));
@@ -434,56 +443,127 @@ function calculateAgentQuestionWindowPosition(petBounds, windowHeight) {
   };
 }
 
-/** 将问答窗口贴近桌宠当前位置；找不到桌宠时保持原位。 */
-function positionAgentQuestionWindow() {
-  const win = runtime.agentQuestionWindow;
+/** 将交互窗口贴近桌宠当前位置；找不到桌宠时保持原位。 */
+function positionInteractiveWindow(win) {
   if (!win || win.isDestroyed()) return;
   const petBounds = getPetBounds();
   if (!petBounds) return;
-  const { height } = win.getBounds();
-  const position = calculateAgentQuestionWindowPosition(petBounds, height);
+  const { width, height } = win.getBounds();
+  const position = calculateInteractiveWindowPosition(petBounds, width, height);
   win.setPosition(position.x, position.y);
 }
 
-/** 立即显示问答窗口；显示流程不依赖渲染层任何回报。 */
-function showAgentQuestionWindow() {
-  const win = runtime.agentQuestionWindow;
-  if (!runtime.latestAgentQuestion || !win || win.isDestroyed()) return;
-  positionAgentQuestionWindow();
+/** 立即显示交互窗口；显示流程不依赖渲染层任何回报。 */
+function showInteractiveWindow(win) {
+  if (!win || win.isDestroyed()) return;
+  positionInteractiveWindow(win);
   if (!win.isVisible()) win.showInactive();
   win.moveTop();
 }
 
-/** 隐藏问答窗口。 */
-function hideAgentQuestionWindow() {
-  const win = runtime.agentQuestionWindow;
+/** 隐藏交互窗口。 */
+function hideInteractiveWindow(win) {
   if (win && !win.isDestroyed() && win.isVisible()) win.hide();
 }
 
-/** 将最新 Agent 问题同步到视觉层与问答窗口，并控制窗口显隐。 */
+/** 计算当前应显示的一级目录选择状态：问答优先，稍后处理豁免。 */
+function getVisibleOutlineSelection() {
+  const selection = runtime.latestOutlineSelection;
+  if (!selection) return null;
+  if (runtime.latestAgentQuestion) return null;
+  if (runtime.outlineSelectionDismissedTaskId === selection.task_id) return null;
+  return selection;
+}
+
+/** 统一调度问答与目录选择两个交互气泡的显隐与待机效果。 */
+function syncInteractiveWindows() {
+  const question = runtime.latestAgentQuestion;
+  const selection = getVisibleOutlineSelection();
+
+  if (runtime.dragPreviewRendererReady) {
+    sendToWindow(runtime.dragPreviewWindow, AGENT_QUESTION_CHANNEL, question);
+    sendToWindow(runtime.dragPreviewWindow, OUTLINE_SELECTION_CHANNEL, selection);
+  }
+
+  if (question) {
+    ensureAgentQuestionWindow();
+    showInteractiveWindow(runtime.agentQuestionWindow);
+  } else {
+    hideInteractiveWindow(runtime.agentQuestionWindow);
+  }
+
+  if (selection) {
+    ensureOutlineSelectionWindow();
+    showInteractiveWindow(runtime.outlineSelectionWindow);
+  } else {
+    hideInteractiveWindow(runtime.outlineSelectionWindow);
+  }
+
+  if (question || selection) {
+    stopIdleEffects();
+  } else {
+    scheduleIdleEffect();
+  }
+}
+
+/** 拖动或巡边时让可见的交互气泡跟随桌宠。 */
+function syncInteractiveWindowPositions() {
+  if (runtime.latestAgentQuestion) positionInteractiveWindow(runtime.agentQuestionWindow);
+  if (getVisibleOutlineSelection()) positionInteractiveWindow(runtime.outlineSelectionWindow);
+}
+
+/** 将最新 Agent 问题同步到问答窗口并调度显隐。 */
 function publishAgentQuestion(question) {
   runtime.latestAgentQuestion = question || null;
-  if (runtime.dragPreviewRendererReady) {
-    sendToWindow(runtime.dragPreviewWindow, AGENT_QUESTION_CHANNEL, runtime.latestAgentQuestion);
-  }
   if (runtime.agentQuestionRendererReady) {
     sendToWindow(runtime.agentQuestionWindow, AGENT_QUESTION_CHANNEL, runtime.latestAgentQuestion);
   }
-
-  if (!runtime.latestAgentQuestion) {
-    hideAgentQuestionWindow();
-    scheduleIdleEffect();
-    return;
-  }
-
-  stopIdleEffects();
-  ensureAgentQuestionWindow();
-  showAgentQuestionWindow();
+  syncInteractiveWindows();
 }
 
 /** 接收主程序推送的 Agent 问题状态。 */
 function handleAgentQuestion(question) {
   publishAgentQuestion(question);
+}
+
+/** 从任务对象提取待确认的一级目录选择；不满足条件时返回 null。 */
+function extractOutlineSelection(task) {
+  if (task?.type !== 'outline-generation') return null;
+  if (!['running', 'pausing'].includes(task.status)) return null;
+  const selection = task.stats?.outline_selection;
+  if (!selection?.items?.length || selection.confirmed) return null;
+  return {
+    task_id: task.task_id,
+    items: selection.items,
+    selected_ids: Array.isArray(selection.selected_ids) ? selection.selected_ids : [],
+    auto_answer_at: selection.auto_answer_at,
+  };
+}
+
+/** 将最新一级目录选择同步到选择窗口并调度显隐。 */
+function publishOutlineSelection(selection) {
+  const next = selection || null;
+  if (!next) {
+    runtime.outlineSelectionDismissedTaskId = null;
+  } else if (
+    runtime.outlineSelectionDismissedTaskId
+    && runtime.outlineSelectionDismissedTaskId !== next.task_id
+  ) {
+    runtime.outlineSelectionDismissedTaskId = null;
+  }
+  runtime.latestOutlineSelection = next;
+  if (runtime.outlineSelectionRendererReady) {
+    sendToWindow(runtime.outlineSelectionWindow, OUTLINE_SELECTION_CHANNEL, next);
+  }
+  syncInteractiveWindows();
+}
+
+/** 启动时从活动任务恢复待确认的一级目录选择。 */
+function restorePendingOutlineSelection() {
+  if (!runtime.ctx) return;
+  const tasks = runtime.ctx.getActiveTasks();
+  const pendingTask = tasks.find((task) => extractOutlineSelection(task));
+  publishOutlineSelection(pendingTask ? extractOutlineSelection(pendingTask) : null);
 }
 
 /** 显示当前活动任务；没有任务时显示空闲。 */
@@ -504,6 +584,10 @@ function clearTerminalTimer() {
 function handleTaskEvent(event) {
   const task = event?.task;
   if (!task) return;
+
+  if (task.type === 'outline-generation') {
+    publishOutlineSelection(extractOutlineSelection(task));
+  }
 
   clearTerminalTimer();
 
@@ -556,6 +640,7 @@ function canRunIdleEffect() {
   return Boolean(
     runtime.latestStatus?.tone === 'idle'
     && !runtime.latestAgentQuestion
+    && !getVisibleOutlineSelection()
     && !runtime.dragState
     && !runtime.latestHovered
     && win
@@ -1191,7 +1276,7 @@ function showDragPreview(windowX, windowY) {
     if (runtime.dragPreviewRendererReady) {
       sendToWindow(previewWindow, DRAG_PREVIEW_CHANNEL, runtime.latestDragPreview);
     }
-    if (runtime.latestAgentQuestion) positionAgentQuestionWindow();
+    syncInteractiveWindowPositions();
     return true;
   } catch (error) {
     if (runtime.edgePatrolState) {
@@ -1291,9 +1376,8 @@ function handlePetHover(event, hovered) {
   publishHover(hovered);
 }
 
-/** 判断 IPC 是否来自问答窗口。 */
-function isAgentQuestionWindowSender(event) {
-  const win = runtime.agentQuestionWindow;
+/** 判断 IPC 是否来自指定交互窗口。 */
+function isWindowSender(event, win) {
   return Boolean(
     win
     && !win.isDestroyed()
@@ -1302,10 +1386,8 @@ function isAgentQuestionWindowSender(event) {
   );
 }
 
-/** 按问答内容实际高度收紧窗口，并保持贴近桌宠。 */
-function handleAgentQuestionHeight(event, requestedHeight) {
-  if (!isAgentQuestionWindowSender(event)) return;
-  const win = runtime.agentQuestionWindow;
+/** 按内容实际高度收紧交互窗口，并保持贴近桌宠。 */
+function applyInteractiveWindowHeight(win, requestedHeight, visible) {
   if (!win || win.isDestroyed()) return;
 
   const petBounds = getPetBounds();
@@ -1313,32 +1395,80 @@ function handleAgentQuestionHeight(event, requestedHeight) {
     ? screen.getDisplayMatching(petBounds)
     : screen.getPrimaryDisplay();
   const maximumHeight = Math.max(
-    AGENT_QUESTION_WINDOW_MIN_HEIGHT,
+    INTERACTIVE_WINDOW_MIN_HEIGHT,
     workArea.height - BUBBLE_EDGE_MARGIN * 2,
   );
   const height = clamp(
-    Math.ceil(Number(requestedHeight) || AGENT_QUESTION_WINDOW_DEFAULT_HEIGHT),
-    AGENT_QUESTION_WINDOW_MIN_HEIGHT,
+    Math.ceil(Number(requestedHeight) || INTERACTIVE_WINDOW_DEFAULT_HEIGHT),
+    INTERACTIVE_WINDOW_MIN_HEIGHT,
     maximumHeight,
   );
   if (win.getBounds().height !== height) {
-    win.setSize(AGENT_QUESTION_WINDOW_WIDTH, height, false);
+    win.setSize(INTERACTIVE_WINDOW_WIDTH, height, false);
   }
-  if (runtime.latestAgentQuestion) showAgentQuestionWindow();
+  if (visible) showInteractiveWindow(win);
+}
+
+/** 按问答内容实际高度收紧窗口。 */
+function handleAgentQuestionHeight(event, requestedHeight) {
+  if (!isWindowSender(event, runtime.agentQuestionWindow)) return;
+  applyInteractiveWindowHeight(
+    runtime.agentQuestionWindow,
+    requestedHeight,
+    Boolean(runtime.latestAgentQuestion),
+  );
 }
 
 /** 从问答窗口提交 Agent 答案。 */
 function handleAgentQuestionAnswer(event, payload) {
-  if (!isAgentQuestionWindowSender(event)) throw new Error('无效的问答窗口来源');
+  if (!isWindowSender(event, runtime.agentQuestionWindow)) throw new Error('无效的问答窗口来源');
   if (!runtime.ctx) throw new Error('桌宠插件尚未激活');
   return runtime.ctx.answerAgentQuestion(payload);
 }
 
 /** 用户在问答窗口操作时停止自动回答倒计时。 */
 function handleAgentQuestionSuppress(event, payload) {
-  if (!isAgentQuestionWindowSender(event)) throw new Error('无效的问答窗口来源');
+  if (!isWindowSender(event, runtime.agentQuestionWindow)) throw new Error('无效的问答窗口来源');
   if (!runtime.ctx) throw new Error('桌宠插件尚未激活');
   return runtime.ctx.suppressAgentQuestionAutoAnswer(payload);
+}
+
+/** 按目录选择内容实际高度收紧窗口。 */
+function handleOutlineSelectionHeight(event, requestedHeight) {
+  if (!isWindowSender(event, runtime.outlineSelectionWindow)) return;
+  applyInteractiveWindowHeight(
+    runtime.outlineSelectionWindow,
+    requestedHeight,
+    Boolean(getVisibleOutlineSelection()),
+  );
+}
+
+/** 从目录选择窗口提交确认。 */
+function handleOutlineSelectionConfirm(event, payload) {
+  if (!isWindowSender(event, runtime.outlineSelectionWindow)) throw new Error('无效的目录选择窗口来源');
+  if (!runtime.ctx) throw new Error('桌宠插件尚未激活');
+  return runtime.ctx.confirmOutlineSelection(payload);
+}
+
+/** 用户在目录选择窗口操作时停止自动确认倒计时。 */
+function handleOutlineSelectionSuppress(event, payload) {
+  if (!isWindowSender(event, runtime.outlineSelectionWindow)) throw new Error('无效的目录选择窗口来源');
+  if (!runtime.ctx) throw new Error('桌宠插件尚未激活');
+  return runtime.ctx.suppressOutlineSelectionAutoConfirmation(payload);
+}
+
+/** “稍后处理”：停止倒计时并在本任务内不再自动弹出目录选择气泡。 */
+function handleOutlineSelectionDismiss(event, payload) {
+  if (!isWindowSender(event, runtime.outlineSelectionWindow)) return;
+  const taskId = String(payload?.taskId || runtime.latestOutlineSelection?.task_id || '');
+  if (!taskId) return;
+  try {
+    runtime.ctx?.suppressOutlineSelectionAutoConfirmation({ taskId });
+  } catch (error) {
+    runtime.ctx?.logger.error('稍后处理时停止自动确认失败:', error);
+  }
+  runtime.outlineSelectionDismissedTaskId = taskId;
+  syncInteractiveWindows();
 }
 /** 注册桌宠指针拖拽所需的主进程 IPC。 */
 function registerDragIpc() {
@@ -1352,6 +1482,10 @@ function registerDragIpc() {
   ipcMain.on(AGENT_QUESTION_HEIGHT_CHANNEL, handleAgentQuestionHeight);
   ipcMain.handle(AGENT_QUESTION_ANSWER_CHANNEL, handleAgentQuestionAnswer);
   ipcMain.handle(AGENT_QUESTION_SUPPRESS_CHANNEL, handleAgentQuestionSuppress);
+  ipcMain.on(OUTLINE_SELECTION_HEIGHT_CHANNEL, handleOutlineSelectionHeight);
+  ipcMain.on(OUTLINE_SELECTION_DISMISS_CHANNEL, handleOutlineSelectionDismiss);
+  ipcMain.handle(OUTLINE_SELECTION_CONFIRM_CHANNEL, handleOutlineSelectionConfirm);
+  ipcMain.handle(OUTLINE_SELECTION_SUPPRESS_CHANNEL, handleOutlineSelectionSuppress);
   runtime.dragIpcRegistered = true;
 }
 
@@ -1367,6 +1501,10 @@ function unregisterDragIpc() {
   ipcMain.removeListener(AGENT_QUESTION_HEIGHT_CHANNEL, handleAgentQuestionHeight);
   ipcMain.removeHandler(AGENT_QUESTION_ANSWER_CHANNEL);
   ipcMain.removeHandler(AGENT_QUESTION_SUPPRESS_CHANNEL);
+  ipcMain.removeListener(OUTLINE_SELECTION_HEIGHT_CHANNEL, handleOutlineSelectionHeight);
+  ipcMain.removeListener(OUTLINE_SELECTION_DISMISS_CHANNEL, handleOutlineSelectionDismiss);
+  ipcMain.removeHandler(OUTLINE_SELECTION_CONFIRM_CHANNEL);
+  ipcMain.removeHandler(OUTLINE_SELECTION_SUPPRESS_CHANNEL);
   runtime.dragIpcRegistered = false;
 }
 /** 找到承载插件管理页面的主程序窗口。 */
@@ -1424,6 +1562,8 @@ function createPetWindow(ctx) {
     if (visualWindow && !visualWindow.isDestroyed()) visualWindow.close();
     const questionWindow = runtime.agentQuestionWindow;
     if (questionWindow && !questionWindow.isDestroyed()) questionWindow.close();
+    const selectionWindow = runtime.outlineSelectionWindow;
+    if (selectionWindow && !selectionWindow.isDestroyed()) selectionWindow.close();
   });
   void win.loadFile(path.join(__dirname, 'drag-handle.html'));
   return win;
@@ -1466,6 +1606,7 @@ function createDragPreviewWindow(ctx, petBounds) {
     sendToWindow(win, STATUS_CHANNEL, runtime.latestStatus);
     sendToWindow(win, HOVER_CHANNEL, runtime.latestHovered);
     sendToWindow(win, AGENT_QUESTION_CHANNEL, runtime.latestAgentQuestion);
+    sendToWindow(win, OUTLINE_SELECTION_CHANNEL, getVisibleOutlineSelection());
     if (runtime.latestDragPreview) {
       sendToWindow(win, DRAG_PREVIEW_CHANNEL, runtime.latestDragPreview);
     }
@@ -1483,11 +1624,11 @@ function createDragPreviewWindow(ctx, petBounds) {
   return win;
 }
 
-/** 创建承载 Agent 快捷回答的可交互气泡窗口。 */
-function createAgentQuestionWindow(ctx) {
+/** 创建承载交互气泡的透明置顶窗口，加载完成后回调补发状态。 */
+function createInteractiveWindow(ctx, htmlFile, onFinishLoad, onClosed) {
   const win = ctx.createWindow({
-    width: AGENT_QUESTION_WINDOW_WIDTH,
-    height: AGENT_QUESTION_WINDOW_DEFAULT_HEIGHT,
+    width: INTERACTIVE_WINDOW_WIDTH,
+    height: INTERACTIVE_WINDOW_DEFAULT_HEIGHT,
     show: false,
     frame: false,
     transparent: true,
@@ -1511,19 +1652,10 @@ function createAgentQuestionWindow(ctx) {
 
   win.setMenuBarVisibility(false);
   win.setAlwaysOnTop(true, 'screen-saver');
-  // did-finish-load 由 Electron 主进程保证触发，显示与补发问题都不依赖渲染层主动上报。
-  win.webContents.on('did-finish-load', () => {
-    if (runtime.agentQuestionWindow !== win) return;
-    runtime.agentQuestionRendererReady = true;
-    sendToWindow(win, AGENT_QUESTION_CHANNEL, runtime.latestAgentQuestion);
-    showAgentQuestionWindow();
-  });
-  win.on('closed', () => {
-    if (runtime.agentQuestionWindow !== win) return;
-    runtime.agentQuestionRendererReady = false;
-    runtime.agentQuestionWindow = null;
-  });
-  void win.loadFile(path.join(__dirname, 'agent-question.html'));
+  // did-finish-load 由 Electron 主进程保证触发，显示与补发状态都不依赖渲染层主动上报。
+  win.webContents.on('did-finish-load', () => onFinishLoad(win));
+  win.on('closed', () => onClosed(win));
+  void win.loadFile(path.join(__dirname, htmlFile));
   return win;
 }
 
@@ -1534,8 +1666,47 @@ function ensureAgentQuestionWindow() {
   }
   if (!runtime.ctx) return null;
   runtime.agentQuestionRendererReady = false;
-  runtime.agentQuestionWindow = createAgentQuestionWindow(runtime.ctx);
+  runtime.agentQuestionWindow = createInteractiveWindow(
+    runtime.ctx,
+    'agent-question.html',
+    (win) => {
+      if (runtime.agentQuestionWindow !== win) return;
+      runtime.agentQuestionRendererReady = true;
+      sendToWindow(win, AGENT_QUESTION_CHANNEL, runtime.latestAgentQuestion);
+      if (runtime.latestAgentQuestion) showInteractiveWindow(win);
+    },
+    (win) => {
+      if (runtime.agentQuestionWindow !== win) return;
+      runtime.agentQuestionRendererReady = false;
+      runtime.agentQuestionWindow = null;
+    },
+  );
   return runtime.agentQuestionWindow;
+}
+
+/** 懒创建目录选择窗口，无待确认目录时不占用渲染进程。 */
+function ensureOutlineSelectionWindow() {
+  if (runtime.outlineSelectionWindow && !runtime.outlineSelectionWindow.isDestroyed()) {
+    return runtime.outlineSelectionWindow;
+  }
+  if (!runtime.ctx) return null;
+  runtime.outlineSelectionRendererReady = false;
+  runtime.outlineSelectionWindow = createInteractiveWindow(
+    runtime.ctx,
+    'outline-selection.html',
+    (win) => {
+      if (runtime.outlineSelectionWindow !== win) return;
+      runtime.outlineSelectionRendererReady = true;
+      sendToWindow(win, OUTLINE_SELECTION_CHANNEL, runtime.latestOutlineSelection);
+      if (getVisibleOutlineSelection()) showInteractiveWindow(win);
+    },
+    (win) => {
+      if (runtime.outlineSelectionWindow !== win) return;
+      runtime.outlineSelectionRendererReady = false;
+      runtime.outlineSelectionWindow = null;
+    },
+  );
+  return runtime.outlineSelectionWindow;
 }
 /** 清理插件持有的窗口、订阅和计时器。 */
 function cleanupRuntime() {
@@ -1577,6 +1748,13 @@ function cleanupRuntime() {
   runtime.agentQuestionWindow = null;
   runtime.agentQuestionRendererReady = false;
   if (questionWindow && !questionWindow.isDestroyed()) questionWindow.close();
+
+  const selectionWindow = runtime.outlineSelectionWindow;
+  runtime.outlineSelectionWindow = null;
+  runtime.outlineSelectionRendererReady = false;
+  runtime.latestOutlineSelection = null;
+  runtime.outlineSelectionDismissedTaskId = null;
+  if (selectionWindow && !selectionWindow.isDestroyed()) selectionWindow.close();
 
   const inputWindow = runtime.petWindow;
   runtime.petWindow = null;
@@ -1622,6 +1800,7 @@ module.exports = {
     runtime.unsubscribeTask = ctx.onTaskEvent(handleTaskEvent);
     runtime.unsubscribeAgentQuestion = ctx.onAgentQuestion(handleAgentQuestion);
     publishAgentQuestion(ctx.getPendingAgentQuestion());
+    restorePendingOutlineSelection();
     ctx.logger.info('易标桌宠已启用');
   },
 

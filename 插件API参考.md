@@ -294,6 +294,32 @@ ctx.answerAgentQuestion({
 
 ---
 
+### 一级目录选择 API
+
+待确认的一级目录状态通过 `onTaskEvent()` / `getActiveTasks()` 中 `outline-generation` 任务的 `task.stats.outline_selection` 观察（含 `items`、`selected_ids`、`auto_answer_at`、`confirmed`），插件只提供确认入口。
+
+#### `ctx.confirmOutlineSelection(payload)`
+
+提交一级目录确认并恢复任务执行，payload 与主界面 Renderer 完全一致：
+
+```javascript
+ctx.confirmOutlineSelection({
+  taskId: task.task_id,
+  items: selection.items,
+  selectedIds: ['item-1', 'item-3'],
+});
+```
+
+#### `ctx.suppressOutlineSelectionAutoConfirmation(payload)`
+
+用户主动操作后，停止当前任务的一级目录自动确认倒计时：
+
+```javascript
+ctx.suppressOutlineSelectionAutoConfirmation({ taskId: task.task_id });
+```
+
+---
+
 ### 配置存储 API
 
 #### `ctx.store.get(key)`
@@ -664,6 +690,7 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
 | `task:read` | 读取任务状态 | `getActiveTasks()`, `getTechnicalPlanState()`, `getDuplicateCheckState()`, `getRejectionCheckState()` |
 | `task:subscribe` | 订阅任务事件 | `onTaskEvent()` |
 | `agent:question` | 响应 Agent 问答 | `getPendingAgentQuestion()`, `onAgentQuestion()`, `answerAgentQuestion()`, `suppressAgentQuestionAutoAnswer()` |
+| `task:confirm` | 确认一级目录选择 | `confirmOutlineSelection()`, `suppressOutlineSelectionAutoConfirmation()` |
 | `window:create` | 创建独立窗口 | `createWindow()` |
 
 ### 无需权限的 API
@@ -756,6 +783,14 @@ interface PluginContext {
   onAgentQuestion?: (callback: (question: AgentQuestion | null) => void) => () => void;
   answerAgentQuestion?: (payload: AgentQuestionAnswerPayload) => { success: boolean };
   suppressAgentQuestionAutoAnswer?: (payload: { question_id: string }) => { success: boolean };
+
+  // 一级目录选择 API
+  confirmOutlineSelection?: (payload: {
+    taskId: string;
+    items: OutlineItem[];
+    selectedIds: string[];
+  }) => { success: boolean };
+  suppressOutlineSelectionAutoConfirmation?: (payload: { taskId: string }) => { success: boolean };
   
   // 窗口 API（需要 window:create 权限）
   createWindow?: (options: BrowserWindowConstructorOptions) => BrowserWindow;

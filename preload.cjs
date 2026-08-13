@@ -14,6 +14,11 @@ const AGENT_QUESTION_CHANNEL = 'plugin:openbidkit-pet:agent-question';
 const AGENT_QUESTION_HEIGHT_CHANNEL = 'plugin:openbidkit-pet:agent-question-height';
 const AGENT_QUESTION_ANSWER_CHANNEL = 'plugin:openbidkit-pet:agent-question-answer';
 const AGENT_QUESTION_SUPPRESS_CHANNEL = 'plugin:openbidkit-pet:agent-question-suppress';
+const OUTLINE_SELECTION_CHANNEL = 'plugin:openbidkit-pet:outline-selection';
+const OUTLINE_SELECTION_HEIGHT_CHANNEL = 'plugin:openbidkit-pet:outline-selection-height';
+const OUTLINE_SELECTION_CONFIRM_CHANNEL = 'plugin:openbidkit-pet:outline-selection-confirm';
+const OUTLINE_SELECTION_SUPPRESS_CHANNEL = 'plugin:openbidkit-pet:outline-selection-suppress';
+const OUTLINE_SELECTION_DISMISS_CHANNEL = 'plugin:openbidkit-pet:outline-selection-dismiss';
 
 contextBridge.exposeInMainWorld('petStatus', {
   /** 订阅桌宠状态变化，并返回取消订阅函数。 */
@@ -127,5 +132,37 @@ contextBridge.exposeInMainWorld('petAgentQuestion', {
   /** 用户主动操作后停止当前问题的自动回答倒计时。 */
   suppressAutoAnswer(payload) {
     return ipcRenderer.invoke(AGENT_QUESTION_SUPPRESS_CHANNEL, payload);
+  },
+});
+
+contextBridge.exposeInMainWorld('petOutlineSelection', {
+  /** 订阅当前一级目录选择状态（无待确认时为 null），并返回取消订阅函数。 */
+  onChange(callback) {
+    if (typeof callback !== 'function') {
+      throw new TypeError('petOutlineSelection.onChange callback must be a function');
+    }
+    const listener = (_event, selection) => callback(selection);
+    ipcRenderer.on(OUTLINE_SELECTION_CHANNEL, listener);
+    return () => ipcRenderer.removeListener(OUTLINE_SELECTION_CHANNEL, listener);
+  },
+
+  /** 上报目录选择卡片的实际内容高度，供主进程收紧窗口。 */
+  reportHeight(height) {
+    ipcRenderer.send(OUTLINE_SELECTION_HEIGHT_CHANNEL, height);
+  },
+
+  /** 提交一级目录确认，payload 为 { taskId, items, selectedIds }。 */
+  confirm(payload) {
+    return ipcRenderer.invoke(OUTLINE_SELECTION_CONFIRM_CHANNEL, payload);
+  },
+
+  /** 用户主动操作后停止自动确认倒计时。 */
+  suppressAutoConfirm(payload) {
+    return ipcRenderer.invoke(OUTLINE_SELECTION_SUPPRESS_CHANNEL, payload);
+  },
+
+  /** 稍后处理：本任务内不再自动弹出目录选择气泡。 */
+  dismiss(payload) {
+    ipcRenderer.send(OUTLINE_SELECTION_DISMISS_CHANNEL, payload);
   },
 });

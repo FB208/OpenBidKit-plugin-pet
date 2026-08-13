@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self'; script-src 'self'"
+  >
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>易标桌宠一级目录选择</title>
+  <link rel="stylesheet" href="outline-selection.css">
+</head>
+<body>
+  <main id="selectionCard" class="selection-card" aria-live="polite">
+    <header class="selection-card__head">
+      <span class="selection-card__eyebrow">选择一级目录</span>
+      <span id="countdown" class="selection-card__countdown" hidden></span>
+    </header>
+    <div id="attrFilters" class="selection-card__filters" aria-label="按属性全选或全不选"></div>
+    <div id="itemList" class="selection-card__list" role="group" aria-label="一级目录清单"></div>
+    <p id="errorMessage" class="selection-card__error" role="alert" hidden></p>
+    <footer class="selection-card__foot">
+      <span id="selectedCount" class="selection-card__count"></span>
+      <div class="selection-card__actions">
+        <button id="dismissButton" class="selection-card__later" type="button">稍后处理</button>
+        <button id="confirmButton" class="selection-card__submit" type="button">确认选择</button>
+      </div>
+    </footer>
+  </main>
+  <script src="outline-selection.js"></script>
+</body>
+</html>
