@@ -53,7 +53,6 @@ const INTERACTIVE_WINDOW_GAP = 10;
 const AI_CHAT_REFRESH_DELAY_MS = 300;
 const TRANSIENT_NOTICE_DURATION_MS = 4000;
 const WINDOW_MARGIN = 24;
-const POSITION_SAVE_DELAY_MS = 200;
 const DRAG_MOVEMENT_THRESHOLD = 2;
 const IDLE_EFFECT_DELAY_MS = 10_000;
 const IDLE_EFFECT_DURATION_MS = 10 * 60 * 1_000;
@@ -103,7 +102,6 @@ const runtime = {
   terminalTimer: null,
   transientNoticeTimer: null,
   aiChatRefreshTimer: null,
-  positionTimer: null,
   dragState: null,
   idleEffectDelayTimer: null,
   idleEffectDurationTimer: null,
@@ -782,13 +780,8 @@ function handleTaskEvent(event) {
   publishLatestActiveOrIdle(task.task_id);
 }
 
-/** 计算首次显示位置，优先使用插件保存的坐标。 */
-function getInitialPosition(ctx) {
-  const savedPosition = ctx.store.get('windowPosition');
-  if (Number.isFinite(savedPosition?.x) && Number.isFinite(savedPosition?.y)) {
-    return { x: Math.round(savedPosition.x), y: Math.round(savedPosition.y) };
-  }
-
+/** 计算首次显示位置，固定为主屏幕工作区右下角，保证桌宠始终可见。 */
+function getInitialPosition() {
   const { workArea } = screen.getPrimaryDisplay();
   return {
     x: workArea.x + workArea.width - BUBBLE_WINDOW_WIDTH - WINDOW_MARGIN
@@ -1139,7 +1132,6 @@ function stopEdgePatrol(options = {}) {
       source: 'edge-patrol',
     });
   }
-  schedulePositionSave();
 }
 
 /** 启动一个已启用的待机效果，并建立十分钟时段。 */
@@ -1328,23 +1320,8 @@ function calculateBubbleWindowPosition(petBounds) {
   };
 }
 
-/** 延迟保存窗口位置，避免拖动期间频繁写配置。 */
-function schedulePositionSave() {
-  if (!runtime.ctx || !runtime.petWindow || runtime.petWindow.isDestroyed()) return;
-  if (runtime.positionTimer) clearTimeout(runtime.positionTimer);
-
-  runtime.positionTimer = setTimeout(() => {
-    runtime.positionTimer = null;
-    const win = runtime.petWindow;
-    if (!runtime.ctx || !win || win.isDestroyed()) return;
-    const [x, y] = win.getPosition();
-    runtime.ctx.store.set('windowPosition', { x, y });
-  }, POSITION_SAVE_DELAY_MS);
-}
-
-/** 输入窗口落位后同步固定画布位置并保存坐标。 */
+/** 输入窗口落位后同步固定画布位置。 */
 function handlePetWindowMove() {
-  if (!runtime.edgePatrolState) schedulePositionSave();
   if (runtime.dragState) return;
 
   const win = runtime.petWindow;
@@ -1521,7 +1498,6 @@ function handleDragEnd(event, rawDelta) {
     showDragPreview(targetX, targetY);
     if (win && !win.isDestroyed()) {
       win.setPosition(targetX, targetY);
-      schedulePositionSave();
     }
   }
   if (state.moving) publishMotion({ active: false, direction: null });
@@ -1746,7 +1722,7 @@ function findHostWindow() {
 
 /** 创建只负责鼠标命中的透明输入窗口。 */
 function createPetWindow(ctx) {
-  const position = getInitialPosition(ctx);
+  const position = getInitialPosition();
   const win = ctx.createWindow({
     width: PET_WINDOW_WIDTH,
     height: PET_WINDOW_HEIGHT,
@@ -1975,10 +1951,6 @@ function cleanupRuntime() {
   runtime.dragState = null;
   stopIdleEffects({ publishStopped: false, preserveForResume: false });
 
-  if (runtime.positionTimer) {
-    clearTimeout(runtime.positionTimer);
-    runtime.positionTimer = null;
-  }
   runtime.latestDragPreview = null;
   runtime.latestHovered = false;
   runtime.latestSkin = null;
