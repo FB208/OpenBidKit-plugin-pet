@@ -29,8 +29,6 @@ let blinkTimeout = null;
 let animationRunId = 0;
 let currentAnimation = null;
 let currentTone = null;
-let latestStatusTone = 'idle';
-let agentQuestionActive = false;
 let movementActive = false;
 let greeted = false;
 let startupAnimationActive = false;
@@ -241,23 +239,9 @@ function playStatusAnimation() {
 
 /** 将主进程发送的状态应用到悬浮窗口。 */
 function renderStatus(status) {
-  latestStatusTone = String(status?.tone || 'idle');
-  const tone = agentQuestionActive ? 'paused' : latestStatusTone;
+  const tone = String(status?.tone || 'idle');
   spriteElement.dataset.tone = tone;
 
-  if (tone !== currentTone) {
-    currentTone = tone;
-    playStatusAnimation();
-  }
-}
-
-/** Agent 等待回答时播放等待动画，回答后恢复最新任务状态。 */
-function renderAgentQuestion(question) {
-  const nextActive = Boolean(question);
-  if (nextActive === agentQuestionActive) return;
-  agentQuestionActive = nextActive;
-  const tone = agentQuestionActive ? 'paused' : latestStatusTone;
-  spriteElement.dataset.tone = tone;
   if (tone !== currentTone) {
     currentTone = tone;
     playStatusAnimation();
@@ -298,7 +282,6 @@ function renderHover(hovered) {
 const unsubscribeStatus = window.petStatus.onChange(renderStatus);
 const unsubscribeMotion = window.petStatus.onMotion(renderMotion);
 const unsubscribeHover = window.petStatus.onHover(renderHover);
-const unsubscribeQuestion = window.petAgentQuestion.onChange(renderAgentQuestion);
 const unsubscribeSkin = window.petSkin.onChange((skin) => {
   void renderSkin(skin);
 });
@@ -309,7 +292,6 @@ window.addEventListener('beforeunload', () => {
   unsubscribeStatus();
   unsubscribeMotion();
   unsubscribeHover();
-  unsubscribeQuestion();
   unsubscribeSkin();
 });
 })();

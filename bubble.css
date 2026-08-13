@@ -46,10 +46,6 @@ body {
   color: #0f172a;
 }
 
-.bubble[hidden] {
-  display: none;
-}
-
 .bubble__copy {
   min-width: 0;
   max-width: 284px;

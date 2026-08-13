@@ -27,13 +27,9 @@ function renderStatus(status) {
 }
 
 const unsubscribeStatus = window.petStatus.onChange(renderStatus);
-const unsubscribeQuestion = window.petAgentQuestion.onChange((question) => {
-  bubbleElement.hidden = Boolean(question);
-});
 
 window.addEventListener('beforeunload', () => {
   unsubscribeStatus();
-  unsubscribeQuestion();
 });
 
 })();

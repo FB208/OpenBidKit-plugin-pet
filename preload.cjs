@@ -10,11 +10,6 @@ const DRAG_MOVE_CHANNEL = 'plugin:openbidkit-pet:drag-move';
 const DRAG_END_CHANNEL = 'plugin:openbidkit-pet:drag-end';
 const DRAG_CANCEL_CHANNEL = 'plugin:openbidkit-pet:drag-cancel';
 const DRAG_PREVIEW_CHANNEL = 'plugin:openbidkit-pet:drag-preview';
-const AGENT_QUESTION_CHANNEL = 'plugin:openbidkit-pet:agent-question';
-const AGENT_QUESTION_READY_CHANNEL = 'plugin:openbidkit-pet:agent-question-ready';
-const AGENT_QUESTION_RESIZE_CHANNEL = 'plugin:openbidkit-pet:agent-question-resize';
-const AGENT_QUESTION_ANSWER_CHANNEL = 'plugin:openbidkit-pet:agent-question-answer';
-const AGENT_QUESTION_SUPPRESS_CHANNEL = 'plugin:openbidkit-pet:agent-question-suppress';
 
 contextBridge.exposeInMainWorld('petStatus', {
   /** 订阅桌宠状态变化，并返回取消订阅函数。 */
@@ -101,37 +96,5 @@ contextBridge.exposeInMainWorld('petDragPreview', {
     const listener = (_event, preview) => callback(preview);
     ipcRenderer.on(DRAG_PREVIEW_CHANNEL, listener);
     return () => ipcRenderer.removeListener(DRAG_PREVIEW_CHANNEL, listener);
-  },
-});
-
-contextBridge.exposeInMainWorld('petAgentQuestion', {
-  /** 订阅 Agent 问题状态，并返回取消订阅函数。 */
-  onChange(callback) {
-    if (typeof callback !== 'function') {
-      throw new TypeError('petAgentQuestion.onChange callback must be a function');
-    }
-    const listener = (_event, question) => callback(question);
-    ipcRenderer.on(AGENT_QUESTION_CHANNEL, listener);
-    return () => ipcRenderer.removeListener(AGENT_QUESTION_CHANNEL, listener);
-  },
-
-  /** 告知主进程问答气泡已可接收当前问题。 */
-  notifyReady() {
-    ipcRenderer.send(AGENT_QUESTION_READY_CHANNEL);
-  },
-
-  /** 按实际内容请求调整问答气泡高度。 */
-  resize(height) {
-    ipcRenderer.send(AGENT_QUESTION_RESIZE_CHANNEL, height);
-  },
-
-  /** 提交选项或自定义要求。 */
-  answer(payload) {
-    return ipcRenderer.invoke(AGENT_QUESTION_ANSWER_CHANNEL, payload);
-  },
-
-  /** 用户主动操作后停止当前问题的自动回答倒计时。 */
-  suppressAutoAnswer(payload) {
-    return ipcRenderer.invoke(AGENT_QUESTION_SUPPRESS_CHANNEL, payload);
   },
 });
