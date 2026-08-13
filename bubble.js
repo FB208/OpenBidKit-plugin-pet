@@ -28,11 +28,12 @@ function renderStatus(status) {
 
 const unsubscribeStatus = window.petStatus.onChange(renderStatus);
 
-// 交互气泡（问答或目录选择）活跃期间隐藏只读任务气泡，避免重叠。
+// 交互气泡（问答、目录选择或 AI 对话）活跃期间隐藏只读任务气泡，避免重叠。
 let questionActive = false;
 let selectionActive = false;
+let aiChatActive = false;
 function syncBubbleHidden() {
-  bubbleElement.hidden = questionActive || selectionActive;
+  bubbleElement.hidden = questionActive || selectionActive || aiChatActive;
 }
 const unsubscribeQuestion = window.petAgentQuestion.onChange((question) => {
   questionActive = Boolean(question);
@@ -42,11 +43,16 @@ const unsubscribeSelection = window.petOutlineSelection.onChange((selection) => 
   selectionActive = Boolean(selection);
   syncBubbleHidden();
 });
+const unsubscribeAiChat = window.petAiChat.onChange((visible) => {
+  aiChatActive = Boolean(visible);
+  syncBubbleHidden();
+});
 
 window.addEventListener('beforeunload', () => {
   unsubscribeStatus();
   unsubscribeQuestion();
   unsubscribeSelection();
+  unsubscribeAiChat();
 });
 
 })();

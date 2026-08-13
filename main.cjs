@@ -23,6 +23,11 @@ const OUTLINE_SELECTION_HEIGHT_CHANNEL = `plugin:${PLUGIN_ID}:outline-selection-
 const OUTLINE_SELECTION_CONFIRM_CHANNEL = `plugin:${PLUGIN_ID}:outline-selection-confirm`;
 const OUTLINE_SELECTION_SUPPRESS_CHANNEL = `plugin:${PLUGIN_ID}:outline-selection-suppress`;
 const OUTLINE_SELECTION_DISMISS_CHANNEL = `plugin:${PLUGIN_ID}:outline-selection-dismiss`;
+const AI_CHAT_CHANNEL = `plugin:${PLUGIN_ID}:ai-chat`;
+const AI_CHAT_HEIGHT_CHANNEL = `plugin:${PLUGIN_ID}:ai-chat-height`;
+const AI_CHAT_SEND_CHANNEL = `plugin:${PLUGIN_ID}:ai-chat-send`;
+const AI_CHAT_CLOSE_CHANNEL = `plugin:${PLUGIN_ID}:ai-chat-close`;
+const AI_BUTTON_CLICK_CHANNEL = `plugin:${PLUGIN_ID}:ai-button-click`;
 const ENABLED_EFFECT_IDS_CONFIG_KEY = 'enabledEffectIds';
 const EDGE_PATROL_EFFECT_ID = 'edge-patrol';
 const SLEEP_EFFECT_ID = 'sleeping';
@@ -44,6 +49,9 @@ const INTERACTIVE_WINDOW_WIDTH = 420;
 const INTERACTIVE_WINDOW_DEFAULT_HEIGHT = 320;
 const INTERACTIVE_WINDOW_MIN_HEIGHT = 160;
 const INTERACTIVE_WINDOW_GAP = 10;
+const AI_BUTTON_SIZE = 40;
+const AI_CHAT_REFRESH_DELAY_MS = 300;
+const TRANSIENT_NOTICE_DURATION_MS = 4000;
 const WINDOW_MARGIN = 24;
 const POSITION_SAVE_DELAY_MS = 200;
 const DRAG_MOVEMENT_THRESHOLD = 2;
@@ -67,6 +75,7 @@ const TASK_LABELS = Object.freeze({
   'bid-section-extraction': '多标段识别',
   'bid-analysis': '招标文件解析',
   'outline-generation': '目录生成',
+  'outline-adjustment': '目录AI调整',
   'global-facts-generation': '全局事实设定',
   'content-generation': '正文生成',
   'rejection-items-extraction': '无效与废标项解析',
@@ -85,11 +94,16 @@ const runtime = {
   dragPreviewWindow: null,
   agentQuestionWindow: null,
   outlineSelectionWindow: null,
+  aiChatWindow: null,
+  aiButtonWindow: null,
   petWindow: null,
   hostWindow: null,
   unsubscribeTask: null,
   unsubscribeAgentQuestion: null,
+  unsubscribeWorkspaceChat: null,
   terminalTimer: null,
+  transientNoticeTimer: null,
+  aiChatRefreshTimer: null,
   positionTimer: null,
   dragState: null,
   idleEffectDelayTimer: null,
@@ -103,6 +117,9 @@ const runtime = {
   dragPreviewRendererReady: false,
   agentQuestionRendererReady: false,
   outlineSelectionRendererReady: false,
+  aiChatRendererReady: false,
+  aiChatOpen: false,
+  aiChatWorkspace: null,
   dragPreviewDisplayId: null,
   dragPreviewTargetBounds: null,
   enabledEffectIds: new Set(),
@@ -475,14 +492,25 @@ function getVisibleOutlineSelection() {
   return selection;
 }
 
-/** 统一调度问答与目录选择两个交互气泡的显隐与待机效果。 */
+/** 判断 AI 对话框当前是否应该可见：问答与目录选择优先。 */
+function isAiChatVisible() {
+  return Boolean(
+    runtime.aiChatOpen
+    && !runtime.latestAgentQuestion
+    && !getVisibleOutlineSelection()
+  );
+}
+
+/** 统一调度问答、目录选择与 AI 对话三个交互气泡的显隐与待机效果。 */
 function syncInteractiveWindows() {
   const question = runtime.latestAgentQuestion;
   const selection = getVisibleOutlineSelection();
+  const aiChatVisible = isAiChatVisible();
 
   if (runtime.dragPreviewRendererReady) {
     sendToWindow(runtime.dragPreviewWindow, AGENT_QUESTION_CHANNEL, question);
     sendToWindow(runtime.dragPreviewWindow, OUTLINE_SELECTION_CHANNEL, selection);
+    sendToWindow(runtime.dragPreviewWindow, AI_CHAT_CHANNEL, aiChatVisible);
   }
 
   if (question) {
@@ -499,7 +527,14 @@ function syncInteractiveWindows() {
     hideInteractiveWindow(runtime.outlineSelectionWindow);
   }
 
-  if (question || selection) {
+  if (aiChatVisible) {
+    ensureAiChatWindow();
+    showInteractiveWindow(runtime.aiChatWindow);
+  } else {
+    hideInteractiveWindow(runtime.aiChatWindow);
+  }
+
+  if (question || selection || aiChatVisible) {
     stopIdleEffects();
   } else {
     scheduleIdleEffect();
@@ -510,6 +545,25 @@ function syncInteractiveWindows() {
 function syncInteractiveWindowPositions() {
   if (runtime.latestAgentQuestion) positionInteractiveWindow(runtime.agentQuestionWindow);
   if (getVisibleOutlineSelection()) positionInteractiveWindow(runtime.outlineSelectionWindow);
+  if (isAiChatVisible()) positionInteractiveWindow(runtime.aiChatWindow);
+  positionAiButtonWindow();
+}
+
+/** 将 AI 按钮小窗贴在桌宠右上角，并限制在当前工作区内。 */
+function positionAiButtonWindow() {
+  const win = runtime.aiButtonWindow;
+  if (!win || win.isDestroyed()) return;
+  const petBounds = getPetBounds();
+  if (!petBounds) return;
+  const { workArea } = screen.getDisplayMatching(petBounds);
+  const desiredX = petBounds.x + PET_WINDOW_WIDTH - PET_SPRITE_INSET_X
+    - Math.round(AI_BUTTON_SIZE / 2);
+  const desiredY = petBounds.y + PET_SPRITE_INSET_Y - Math.round(AI_BUTTON_SIZE / 2);
+  win.setPosition(
+    clamp(desiredX, workArea.x, workArea.x + workArea.width - AI_BUTTON_SIZE),
+    clamp(desiredY, workArea.y, workArea.y + workArea.height - AI_BUTTON_SIZE),
+  );
+  win.moveTop();
 }
 
 /** 将最新 Agent 问题同步到问答窗口并调度显隐。 */
@@ -580,6 +634,136 @@ function clearTerminalTimer() {
   }
 }
 
+/** 清理气泡临时提示计时器。 */
+function clearTransientNoticeTimer() {
+  if (runtime.transientNoticeTimer) {
+    clearTimeout(runtime.transientNoticeTimer);
+    runtime.transientNoticeTimer = null;
+  }
+}
+
+/** 在状态气泡上短暂显示一条提示，数秒后恢复原状态。 */
+function showTransientNotice(text, detail) {
+  clearTransientNoticeTimer();
+  publishStatus({
+    text,
+    tone: 'idle',
+    title: text,
+    detail: detail || '',
+    taskType: null,
+    status: 'notice',
+    progress: 0,
+  });
+  runtime.transientNoticeTimer = setTimeout(() => {
+    runtime.transientNoticeTimer = null;
+    publishLatestActiveOrIdle();
+  }, TRANSIENT_NOTICE_DURATION_MS);
+}
+
+/** 清理 AI 对话刷新去抖计时器。 */
+function clearAiChatRefreshTimer() {
+  if (runtime.aiChatRefreshTimer) {
+    clearTimeout(runtime.aiChatRefreshTimer);
+    runtime.aiChatRefreshTimer = null;
+  }
+}
+
+/** 将最新工作空间状态同步到 AI 对话窗口。 */
+function publishAiChatState() {
+  if (!runtime.aiChatRendererReady) return;
+  sendToWindow(
+    runtime.aiChatWindow,
+    AI_CHAT_CHANNEL,
+    runtime.aiChatOpen ? runtime.aiChatWorkspace : null,
+  );
+}
+
+/** 重新读取 Agent 工作空间列表并刷新 AI 对话内容。 */
+function refreshAiChatWorkspace() {
+  if (!runtime.ctx || !runtime.aiChatOpen) return;
+  if (typeof runtime.ctx.listAgentWorkspaces !== 'function') return;
+  let workspaces = [];
+  try {
+    workspaces = runtime.ctx.listAgentWorkspaces() || [];
+  } catch (error) {
+    runtime.ctx.logger.error('读取 Agent 工作空间失败:', error);
+    return;
+  }
+  const current = workspaces.find(
+    (workspace) => workspace.id === runtime.aiChatWorkspace?.id,
+  ) || workspaces[0] || null;
+  if (!current) {
+    closeAiChat();
+    showTransientNotice('当前没有可执行任务', '目录生成完成后可通过 AI 对话调整');
+    return;
+  }
+  runtime.aiChatWorkspace = current;
+  publishAiChatState();
+}
+
+/** 任务事件后延迟刷新 AI 对话，避免高频任务事件反复读库。 */
+function scheduleAiChatRefresh() {
+  if (!runtime.aiChatOpen) return;
+  clearAiChatRefreshTimer();
+  runtime.aiChatRefreshTimer = setTimeout(() => {
+    runtime.aiChatRefreshTimer = null;
+    refreshAiChatWorkspace();
+  }, AI_CHAT_REFRESH_DELAY_MS);
+}
+
+/** 打开 AI 对话；无可用工作空间时用气泡短暂提示。 */
+function openAiChat() {
+  if (!runtime.ctx) return;
+  if (typeof runtime.ctx.listAgentWorkspaces !== 'function') {
+    showTransientNotice('主程序版本不支持 AI 对话', '请升级易标主程序后重试');
+    return;
+  }
+  let workspaces = [];
+  try {
+    workspaces = runtime.ctx.listAgentWorkspaces() || [];
+  } catch (error) {
+    runtime.ctx.logger.error('读取 Agent 工作空间失败:', error);
+    showTransientNotice('读取 Agent 工作空间失败', '请稍后重试');
+    return;
+  }
+  if (!workspaces.length) {
+    closeAiChat();
+    showTransientNotice('当前没有可执行任务', '目录生成完成后可通过 AI 对话调整');
+    return;
+  }
+  runtime.aiChatWorkspace = workspaces.find(
+    (workspace) => workspace.id === runtime.aiChatWorkspace?.id,
+  ) || workspaces[0];
+  runtime.aiChatOpen = true;
+  publishAiChatState();
+  syncInteractiveWindows();
+}
+
+/** 关闭 AI 对话框（保留聊天记录，由主程序内存维护）。 */
+function closeAiChat() {
+  if (!runtime.aiChatOpen) return;
+  runtime.aiChatOpen = false;
+  clearAiChatRefreshTimer();
+  publishAiChatState();
+  syncInteractiveWindows();
+}
+
+/** AI 按钮点击：切换对话框开关。 */
+function toggleAiChat() {
+  if (runtime.aiChatOpen) {
+    closeAiChat();
+  } else {
+    openAiChat();
+  }
+}
+
+/** 接收主程序推送的工作空间聊天事件。 */
+function handleWorkspaceChatEvent(event) {
+  if (!runtime.aiChatOpen) return;
+  if (event?.workspace_id && event.workspace_id !== runtime.aiChatWorkspace?.id) return;
+  refreshAiChatWorkspace();
+}
+
 /** 处理主程序任务事件并更新展示状态。 */
 function handleTaskEvent(event) {
   const task = event?.task;
@@ -589,6 +773,8 @@ function handleTaskEvent(event) {
     publishOutlineSelection(extractOutlineSelection(task));
   }
 
+  scheduleAiChatRefresh();
+  clearTransientNoticeTimer();
   clearTerminalTimer();
 
   if (task.status === 'running' || task.status === 'pausing') {
@@ -641,6 +827,7 @@ function canRunIdleEffect() {
     runtime.latestStatus?.tone === 'idle'
     && !runtime.latestAgentQuestion
     && !getVisibleOutlineSelection()
+    && !isAiChatVisible()
     && !runtime.dragState
     && !runtime.latestHovered
     && win
@@ -1457,6 +1644,43 @@ function handleOutlineSelectionSuppress(event, payload) {
   return runtime.ctx.suppressOutlineSelectionAutoConfirmation(payload);
 }
 
+/** 按 AI 对话内容实际高度收紧窗口。 */
+function handleAiChatHeight(event, requestedHeight) {
+  if (!isWindowSender(event, runtime.aiChatWindow)) return;
+  applyInteractiveWindowHeight(
+    runtime.aiChatWindow,
+    requestedHeight,
+    isAiChatVisible(),
+  );
+}
+
+/** 从 AI 对话窗口向 Agent 工作空间发送调整要求。 */
+function handleAiChatSend(event, payload) {
+  if (!isWindowSender(event, runtime.aiChatWindow)) throw new Error('无效的 AI 对话窗口来源');
+  if (!runtime.ctx) throw new Error('桌宠插件尚未激活');
+  if (typeof runtime.ctx.sendAgentWorkspaceMessage !== 'function') {
+    throw new Error('主程序版本不支持 AI 对话，请升级易标主程序');
+  }
+  const result = runtime.ctx.sendAgentWorkspaceMessage({
+    workspaceId: String(payload?.workspaceId || ''),
+    message: String(payload?.message || ''),
+  });
+  refreshAiChatWorkspace();
+  return result;
+}
+
+/** 用户点击 AI 对话窗口的关闭按钮。 */
+function handleAiChatClose(event) {
+  if (!isWindowSender(event, runtime.aiChatWindow)) return;
+  closeAiChat();
+}
+
+/** 用户点击桌宠旁的 AI 按钮。 */
+function handleAiButtonClick(event) {
+  if (!isWindowSender(event, runtime.aiButtonWindow)) return;
+  toggleAiChat();
+}
+
 /** “稍后处理”：停止倒计时并在本任务内不再自动弹出目录选择气泡。 */
 function handleOutlineSelectionDismiss(event, payload) {
   if (!isWindowSender(event, runtime.outlineSelectionWindow)) return;
@@ -1486,6 +1710,10 @@ function registerDragIpc() {
   ipcMain.on(OUTLINE_SELECTION_DISMISS_CHANNEL, handleOutlineSelectionDismiss);
   ipcMain.handle(OUTLINE_SELECTION_CONFIRM_CHANNEL, handleOutlineSelectionConfirm);
   ipcMain.handle(OUTLINE_SELECTION_SUPPRESS_CHANNEL, handleOutlineSelectionSuppress);
+  ipcMain.on(AI_CHAT_HEIGHT_CHANNEL, handleAiChatHeight);
+  ipcMain.on(AI_CHAT_CLOSE_CHANNEL, handleAiChatClose);
+  ipcMain.on(AI_BUTTON_CLICK_CHANNEL, handleAiButtonClick);
+  ipcMain.handle(AI_CHAT_SEND_CHANNEL, handleAiChatSend);
   runtime.dragIpcRegistered = true;
 }
 
@@ -1505,6 +1733,10 @@ function unregisterDragIpc() {
   ipcMain.removeListener(OUTLINE_SELECTION_DISMISS_CHANNEL, handleOutlineSelectionDismiss);
   ipcMain.removeHandler(OUTLINE_SELECTION_CONFIRM_CHANNEL);
   ipcMain.removeHandler(OUTLINE_SELECTION_SUPPRESS_CHANNEL);
+  ipcMain.removeListener(AI_CHAT_HEIGHT_CHANNEL, handleAiChatHeight);
+  ipcMain.removeListener(AI_CHAT_CLOSE_CHANNEL, handleAiChatClose);
+  ipcMain.removeListener(AI_BUTTON_CLICK_CHANNEL, handleAiButtonClick);
+  ipcMain.removeHandler(AI_CHAT_SEND_CHANNEL);
   runtime.dragIpcRegistered = false;
 }
 /** 找到承载插件管理页面的主程序窗口。 */
@@ -1564,6 +1796,10 @@ function createPetWindow(ctx) {
     if (questionWindow && !questionWindow.isDestroyed()) questionWindow.close();
     const selectionWindow = runtime.outlineSelectionWindow;
     if (selectionWindow && !selectionWindow.isDestroyed()) selectionWindow.close();
+    const chatWindow = runtime.aiChatWindow;
+    if (chatWindow && !chatWindow.isDestroyed()) chatWindow.close();
+    const buttonWindow = runtime.aiButtonWindow;
+    if (buttonWindow && !buttonWindow.isDestroyed()) buttonWindow.close();
   });
   void win.loadFile(path.join(__dirname, 'drag-handle.html'));
   return win;
@@ -1607,6 +1843,7 @@ function createDragPreviewWindow(ctx, petBounds) {
     sendToWindow(win, HOVER_CHANNEL, runtime.latestHovered);
     sendToWindow(win, AGENT_QUESTION_CHANNEL, runtime.latestAgentQuestion);
     sendToWindow(win, OUTLINE_SELECTION_CHANNEL, getVisibleOutlineSelection());
+    sendToWindow(win, AI_CHAT_CHANNEL, isAiChatVisible());
     if (runtime.latestDragPreview) {
       sendToWindow(win, DRAG_PREVIEW_CHANNEL, runtime.latestDragPreview);
     }
@@ -1708,9 +1945,78 @@ function ensureOutlineSelectionWindow() {
   );
   return runtime.outlineSelectionWindow;
 }
+
+/** 懒创建 AI 对话窗口，未打开时不占用渲染进程。 */
+function ensureAiChatWindow() {
+  if (runtime.aiChatWindow && !runtime.aiChatWindow.isDestroyed()) {
+    return runtime.aiChatWindow;
+  }
+  if (!runtime.ctx) return null;
+  runtime.aiChatRendererReady = false;
+  runtime.aiChatWindow = createInteractiveWindow(
+    runtime.ctx,
+    'ai-chat.html',
+    (win) => {
+      if (runtime.aiChatWindow !== win) return;
+      runtime.aiChatRendererReady = true;
+      publishAiChatState();
+      if (isAiChatVisible()) showInteractiveWindow(win);
+    },
+    (win) => {
+      if (runtime.aiChatWindow !== win) return;
+      runtime.aiChatRendererReady = false;
+      runtime.aiChatWindow = null;
+    },
+  );
+  return runtime.aiChatWindow;
+}
+
+/** 创建桌宠旁常驻的圆形 AI 按钮小窗。 */
+function createAiButtonWindow(ctx) {
+  const win = ctx.createWindow({
+    width: AI_BUTTON_SIZE,
+    height: AI_BUTTON_SIZE,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    focusable: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    hasShadow: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false,
+    },
+  });
+
+  win.setMenuBarVisibility(false);
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.webContents.on('did-finish-load', () => {
+    if (runtime.aiButtonWindow !== win || win.isDestroyed()) return;
+    positionAiButtonWindow();
+    win.showInactive();
+    win.moveTop();
+  });
+  win.on('closed', () => {
+    if (runtime.aiButtonWindow !== win) return;
+    runtime.aiButtonWindow = null;
+  });
+  void win.loadFile(path.join(__dirname, 'ai-button.html'));
+  return win;
+}
 /** 清理插件持有的窗口、订阅和计时器。 */
 function cleanupRuntime() {
   clearTerminalTimer();
+  clearTransientNoticeTimer();
+  clearAiChatRefreshTimer();
   unregisterDragIpc();
   unregisterDisplayEvents();
   runtime.dragState = null;
@@ -1731,6 +2037,10 @@ function cleanupRuntime() {
   if (runtime.unsubscribeAgentQuestion) {
     runtime.unsubscribeAgentQuestion();
     runtime.unsubscribeAgentQuestion = null;
+  }
+  if (runtime.unsubscribeWorkspaceChat) {
+    runtime.unsubscribeWorkspaceChat();
+    runtime.unsubscribeWorkspaceChat = null;
   }
   if (runtime.hostWindow && !runtime.hostWindow.isDestroyed()) {
     runtime.hostWindow.removeListener('closed', handleHostWindowClosed);
@@ -1755,6 +2065,17 @@ function cleanupRuntime() {
   runtime.latestOutlineSelection = null;
   runtime.outlineSelectionDismissedTaskId = null;
   if (selectionWindow && !selectionWindow.isDestroyed()) selectionWindow.close();
+
+  const chatWindow = runtime.aiChatWindow;
+  runtime.aiChatWindow = null;
+  runtime.aiChatRendererReady = false;
+  runtime.aiChatOpen = false;
+  runtime.aiChatWorkspace = null;
+  if (chatWindow && !chatWindow.isDestroyed()) chatWindow.close();
+
+  const buttonWindow = runtime.aiButtonWindow;
+  runtime.aiButtonWindow = null;
+  if (buttonWindow && !buttonWindow.isDestroyed()) buttonWindow.close();
 
   const inputWindow = runtime.petWindow;
   runtime.petWindow = null;
@@ -1796,12 +2117,27 @@ module.exports = {
       runtime.hostWindow.once('closed', handleHostWindowClosed);
     }
 
+    runtime.aiButtonWindow = createAiButtonWindow(ctx);
+
     publishLatestActiveOrIdle();
     runtime.unsubscribeTask = ctx.onTaskEvent(handleTaskEvent);
     runtime.unsubscribeAgentQuestion = ctx.onAgentQuestion(handleAgentQuestion);
+    if (typeof ctx.onAgentWorkspaceChatEvent === 'function') {
+      runtime.unsubscribeWorkspaceChat = ctx.onAgentWorkspaceChatEvent(handleWorkspaceChatEvent);
+    }
     publishAgentQuestion(ctx.getPendingAgentQuestion());
     restorePendingOutlineSelection();
     ctx.logger.info('易标桌宠已启用');
+  },
+
+  /** 接收主程序宿主事件：open-ai-chat 打开 AI 对话框。 */
+  async onHostEvent(event) {
+    if (!runtime.ctx) throw new Error('桌宠插件尚未激活');
+    if (event === 'open-ai-chat') {
+      openAiChat();
+      return;
+    }
+    runtime.ctx.logger.info(`忽略未知宿主事件: ${event}`);
   },
 
   /** 配置页保存后，无需重启插件即可更新皮肤或效果。 */

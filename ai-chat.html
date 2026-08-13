@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self'; script-src 'self'"
+  >
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>易标桌宠 AI 对话</title>
+  <link rel="stylesheet" href="ai-chat.css">
+</head>
+<body>
+  <main id="chatCard" class="chat-card" aria-live="polite">
+    <header class="chat-card__head">
+      <span class="chat-card__avatar" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
+          <path d="M12 4.5 13.8 9.2 18.5 11 13.8 12.8 12 17.5 10.2 12.8 5.5 11 10.2 9.2z" />
+          <path d="M18.6 4.4v3.2" />
+          <path d="M17 6h3.2" />
+        </svg>
+      </span>
+      <div class="chat-card__title-wrap">
+        <span id="chatTitle" class="chat-card__title">AI 对话</span>
+        <span class="chat-card__status">
+          <span id="statusDot" class="chat-card__status-dot" data-state="ready"></span>
+          <span id="statusText" class="chat-card__status-text">就绪</span>
+        </span>
+      </div>
+      <button id="closeButton" class="chat-card__close" type="button" aria-label="关闭对话框">×</button>
+    </header>
+    <div id="messageList" class="chat-card__messages" role="log" aria-label="对话记录">
+      <p id="emptyHint" class="chat-card__empty">向 Agent 描述你的目录调整要求，例如“把安全管理章节拆成两章”。</p>
+    </div>
+    <div id="warningBar" class="chat-card__warning" hidden>
+      <p class="chat-card__warning-text">调整目录将清空已生成的正文内容，是否继续？</p>
+      <div class="chat-card__warning-actions">
+        <button id="warningCancelButton" class="chat-card__warning-cancel" type="button">取消</button>
+        <button id="warningConfirmButton" class="chat-card__warning-confirm" type="button">确认继续</button>
+      </div>
+    </div>
+    <footer class="chat-card__foot">
+      <textarea
+        id="messageInput"
+        class="chat-card__input"
+        rows="2"
+        placeholder="请输入目录调整要求…（Ctrl+Enter 发送）"
+      ></textarea>
+      <button id="sendButton" class="chat-card__send" type="button" aria-label="发送">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h13" />
+          <path d="m13 6 6 6-6 6" />
+        </svg>
+      </button>
+    </footer>
+  </main>
+  <script src="ai-chat.js"></script>
+</body>
+</html>

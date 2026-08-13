@@ -1,0 +1,357 @@
+:root {
+  color-scheme: light;
+  font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+}
+
+body {
+  display: flex;
+  align-items: flex-start;
+  padding: 8px;
+}
+
+.chat-card {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgb(255 255 255 / 92%);
+  border-radius: 18px;
+  background: rgb(255 255 255 / 97%);
+  box-shadow:
+    0 10px 24px rgb(15 23 42 / 16%),
+    0 2px 6px rgb(15 23 42 / 8%);
+  color: #0f172a;
+}
+
+.chat-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-card__avatar {
+  display: flex;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #6366f1, #0ea5e9);
+  color: #fff;
+}
+
+.chat-card__avatar svg {
+  width: 18px;
+  height: 18px;
+}
+
+.chat-card__title-wrap {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-card__title {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-card__status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chat-card__status-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+.chat-card__status-dot[data-state="busy"] {
+  background: #f59e0b;
+}
+
+.chat-card__status-text {
+  overflow: hidden;
+  color: #64748b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-card__close {
+  display: flex;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #64748b;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chat-card__close:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.chat-card__messages {
+  display: flex;
+  max-height: 320px;
+  min-height: 72px;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.chat-card__empty {
+  margin: auto 0;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.chat-message {
+  display: flex;
+  max-width: 100%;
+  gap: 8px;
+}
+
+.chat-message--user {
+  justify-content: flex-end;
+}
+
+.chat-message__avatar {
+  display: flex;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #6366f1, #0ea5e9);
+  color: #fff;
+}
+
+.chat-message__avatar svg {
+  width: 14px;
+  height: 14px;
+}
+
+.chat-message__bubble {
+  max-width: 78%;
+  padding: 7px 11px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 18px;
+  user-select: text;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-message--user .chat-message__bubble {
+  border-bottom-right-radius: 4px;
+  background: #0284c7;
+  color: #fff;
+}
+
+.chat-message--agent .chat-message__bubble {
+  border-bottom-left-radius: 4px;
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.chat-message--error .chat-message__bubble {
+  border-bottom-left-radius: 4px;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.chat-typing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 12px;
+}
+
+.chat-typing__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  animation: chat-typing-bounce 1.2s infinite ease-in-out;
+  background: #94a3b8;
+}
+
+.chat-typing__dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.chat-typing__dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes chat-typing-bounce {
+  0%,
+  60%,
+  100% {
+    opacity: 0.4;
+    transform: translateY(0);
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+.chat-card__warning {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid #fde68a;
+  border-radius: 12px;
+  background: #fffbeb;
+}
+
+.chat-card__warning-text {
+  margin: 0;
+  color: #92400e;
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.chat-card__warning-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.chat-card__warning-cancel {
+  padding: 4px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+  color: #475569;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chat-card__warning-cancel:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.chat-card__warning-confirm {
+  padding: 4px 14px;
+  border: none;
+  border-radius: 999px;
+  background: #d97706;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chat-card__warning-confirm:hover {
+  background: #b45309;
+}
+
+.chat-card__foot {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.chat-card__input {
+  min-height: 40px;
+  max-height: 96px;
+  flex: 1 1 auto;
+  padding: 8px 11px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #0f172a;
+  font: inherit;
+  font-size: 12px;
+  line-height: 17px;
+  resize: none;
+}
+
+.chat-card__input:focus {
+  border-color: #0284c7;
+  outline: none;
+  background: #fff;
+}
+
+.chat-card__input:disabled {
+  color: #94a3b8;
+  cursor: default;
+}
+
+.chat-card__send {
+  display: flex;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #6366f1, #0ea5e9);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.12s ease;
+}
+
+.chat-card__send svg {
+  width: 17px;
+  height: 17px;
+}
+
+.chat-card__send:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.chat-card__send:disabled {
+  background: #cbd5e1;
+  cursor: default;
+}

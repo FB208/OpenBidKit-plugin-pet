@@ -320,6 +320,70 @@ ctx.suppressOutlineSelectionAutoConfirmation({ taskId: task.task_id });
 
 ---
 
+### Agent 工作空间 API
+
+主程序 `agentWorkspaceService` 向插件暴露可对话的通用 Agent 工作空间（当前仅内置目录生成工作空间，发送要求会以 `outline-adjustment` 受管任务 resume 持久会话）。插件不得绕过该服务直接操作持久 Agent 任务。
+
+#### `ctx.listAgentWorkspaces()`
+
+列出当前可对话的 Agent 工作空间；没有可用工作空间时返回空数组：
+
+```javascript
+const workspaces = ctx.listAgentWorkspaces();
+// [{
+//   id: 'technical-plan-outline-generation',
+//   title: '目录生成',
+//   status: 'ready' | 'busy',
+//   busy_reason: '正文生成任务执行中，请等待完成',   // status 为 busy 时的原因
+//   has_generated_content: false,                    // 目录下已有正文时为 true
+//   pending: false,                                  // 上一条要求是否仍在处理
+//   messages: [{ id, role: 'user'|'agent'|'error', text, at }],
+// }]
+```
+
+#### `ctx.sendAgentWorkspaceMessage(payload)`
+
+向指定工作空间发送用户要求。消息入列后立即返回，Agent 最终回复通过 `onAgentWorkspaceChatEvent()` 推送：
+
+```javascript
+const result = ctx.sendAgentWorkspaceMessage({
+  workspaceId: workspace.id,
+  message: '把安全管理章节拆成两章',
+});
+// { success: true } 或 { success: false, error: '...' }
+// 工作空间不可用、要求为空或 Agent 忙碌时抛出错误
+```
+
+#### `ctx.onAgentWorkspaceChatEvent(callback)`
+
+订阅工作空间聊天状态（用户消息入列、pending 变化、Agent 最终回复、错误），返回取消订阅函数：
+
+```javascript
+const unsubscribe = ctx.onAgentWorkspaceChatEvent((event) => {
+  // event = { workspace_id, messages, pending }
+});
+```
+
+---
+
+### 宿主事件（onHostEvent）
+
+主程序可通过 `pluginService.notifyPluginEvent(pluginId, event, payload)` 向已启用插件发送宿主事件。插件通过可选导出 `onHostEvent(event, payload)` 接收：
+
+```javascript
+module.exports = {
+  async activate(ctx) { /* ... */ },
+  async onHostEvent(event, payload) {
+    if (event === 'open-ai-chat') {
+      // 主程序请求打开 AI 对话框
+    }
+  },
+  async deactivate() { /* ... */ },
+};
+```
+
+---
+
 ### 配置存储 API
 
 #### `ctx.store.get(key)`
@@ -691,6 +755,7 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
 | `task:subscribe` | 订阅任务事件 | `onTaskEvent()` |
 | `agent:question` | 响应 Agent 问答 | `getPendingAgentQuestion()`, `onAgentQuestion()`, `answerAgentQuestion()`, `suppressAgentQuestionAutoAnswer()` |
 | `task:confirm` | 确认一级目录选择 | `confirmOutlineSelection()`, `suppressOutlineSelectionAutoConfirmation()` |
+| `agent:workspace` | 与 Agent 工作空间对话 | `listAgentWorkspaces()`, `sendAgentWorkspaceMessage()`, `onAgentWorkspaceChatEvent()` |
 | `window:create` | 创建独立窗口 | `createWindow()` |
 
 ### 无需权限的 API
@@ -791,9 +856,42 @@ interface PluginContext {
     selectedIds: string[];
   }) => { success: boolean };
   suppressOutlineSelectionAutoConfirmation?: (payload: { taskId: string }) => { success: boolean };
-  
+
+  // Agent 工作空间 API
+  listAgentWorkspaces?: () => AgentWorkspace[];
+  sendAgentWorkspaceMessage?: (payload: {
+    workspaceId: string;
+    message: string;
+  }) => { success: boolean; error?: string };
+  onAgentWorkspaceChatEvent?: (
+    callback: (event: AgentWorkspaceChatEvent) => void,
+  ) => () => void;
+
   // 窗口 API（需要 window:create 权限）
   createWindow?: (options: BrowserWindowConstructorOptions) => BrowserWindow;
+}
+
+interface AgentWorkspaceMessage {
+  id: string;
+  role: 'user' | 'agent' | 'error';
+  text: string;
+  at: string;
+}
+
+interface AgentWorkspace {
+  id: string;
+  title: string;
+  status: 'ready' | 'busy';
+  busy_reason?: string;
+  has_generated_content: boolean;
+  pending: boolean;
+  messages: AgentWorkspaceMessage[];
+}
+
+interface AgentWorkspaceChatEvent {
+  workspace_id: string;
+  messages: AgentWorkspaceMessage[];
+  pending: boolean;
 }
 ```
 
@@ -811,7 +909,12 @@ interface PluginModule {
    * 配置页保存后调用（可选）
    */
   onConfigChange?(change: { key: string; value: any }): Promise<void> | void;
-  
+
+  /**
+   * 主程序宿主事件（可选），例如 'open-ai-chat'
+   */
+  onHostEvent?(event: string, payload?: any): Promise<void> | void;
+
   /**
    * 插件停用时调用
    */

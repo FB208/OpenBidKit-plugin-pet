@@ -19,6 +19,11 @@ const OUTLINE_SELECTION_HEIGHT_CHANNEL = 'plugin:openbidkit-pet:outline-selectio
 const OUTLINE_SELECTION_CONFIRM_CHANNEL = 'plugin:openbidkit-pet:outline-selection-confirm';
 const OUTLINE_SELECTION_SUPPRESS_CHANNEL = 'plugin:openbidkit-pet:outline-selection-suppress';
 const OUTLINE_SELECTION_DISMISS_CHANNEL = 'plugin:openbidkit-pet:outline-selection-dismiss';
+const AI_CHAT_CHANNEL = 'plugin:openbidkit-pet:ai-chat';
+const AI_CHAT_HEIGHT_CHANNEL = 'plugin:openbidkit-pet:ai-chat-height';
+const AI_CHAT_SEND_CHANNEL = 'plugin:openbidkit-pet:ai-chat-send';
+const AI_CHAT_CLOSE_CHANNEL = 'plugin:openbidkit-pet:ai-chat-close';
+const AI_BUTTON_CLICK_CHANNEL = 'plugin:openbidkit-pet:ai-button-click';
 
 contextBridge.exposeInMainWorld('petStatus', {
   /** 订阅桌宠状态变化，并返回取消订阅函数。 */
@@ -164,5 +169,39 @@ contextBridge.exposeInMainWorld('petOutlineSelection', {
   /** 稍后处理：本任务内不再自动弹出目录选择气泡。 */
   dismiss(payload) {
     ipcRenderer.send(OUTLINE_SELECTION_DISMISS_CHANNEL, payload);
+  },
+});
+
+contextBridge.exposeInMainWorld('petAiChat', {
+  /** 订阅 AI 对话工作空间状态（对话框关闭时为 null，视觉层收到的是可见布尔值）。 */
+  onChange(callback) {
+    if (typeof callback !== 'function') {
+      throw new TypeError('petAiChat.onChange callback must be a function');
+    }
+    const listener = (_event, workspace) => callback(workspace);
+    ipcRenderer.on(AI_CHAT_CHANNEL, listener);
+    return () => ipcRenderer.removeListener(AI_CHAT_CHANNEL, listener);
+  },
+
+  /** 上报对话卡片的实际内容高度，供主进程收紧窗口。 */
+  reportHeight(height) {
+    ipcRenderer.send(AI_CHAT_HEIGHT_CHANNEL, height);
+  },
+
+  /** 向 Agent 工作空间发送调整要求，payload 为 { workspaceId, message }。 */
+  send(payload) {
+    return ipcRenderer.invoke(AI_CHAT_SEND_CHANNEL, payload);
+  },
+
+  /** 关闭 AI 对话框。 */
+  close() {
+    ipcRenderer.send(AI_CHAT_CLOSE_CHANNEL);
+  },
+});
+
+contextBridge.exposeInMainWorld('petAiButton', {
+  /** 点击 AI 按钮，切换对话框开关。 */
+  click() {
+    ipcRenderer.send(AI_BUTTON_CLICK_CHANNEL);
   },
 });
