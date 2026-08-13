@@ -1,19 +1,21 @@
 {
     "id":  "openbidkit-pet",
     "name":  "易标桌宠",
-    "version":  "0.6.2",
-    "description":  "在桌面悬浮显示易标图标，并实时展示当前任务状态。",
+    "version":  "1.3.0",
+    "description":  "在桌面悬浮显示易标图标，实时展示任务状态并快捷回答 Agent 问题。",
     "author":  "FB208",
     "repository":  "https://github.com/FB208/OpenBidKit-plugin-pet",
-    "releaseUrl":  "https://github.com/FB208/OpenBidKit-plugin-pet/releases/download/v0.6.2/openbidkit-pet-v0.6.2.zip",
+    "releaseUrl":  "https://github.com/FB208/OpenBidKit-plugin-pet/releases/download/v1.3.0/openbidkit-pet-v1.3.0.zip",
     "tags":  [
                  "桌宠",
                  "悬浮窗",
-                 "任务状态"
+                 "任务状态",
+                 "Agent问答"
              ],
     "permissions":  [
                         "task:read",
                         "task:subscribe",
+                        "agent:question",
                         "window:create"
                     ],
     "hasConfig":  true,

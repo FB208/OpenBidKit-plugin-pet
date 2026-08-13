@@ -89,6 +89,10 @@ body {
   line-height: 1;
 }
 
+.bubble[hidden] {
+  display: none;
+}
+
 .bubble[data-tone="running"] {
   --accent: #0284c7;
   --accent-background: #e0f2fe;

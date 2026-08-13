@@ -27,9 +27,14 @@ function renderStatus(status) {
 }
 
 const unsubscribeStatus = window.petStatus.onChange(renderStatus);
+// Agent 提问期间隐藏只读任务气泡，避免与快捷回答气泡重叠。
+const unsubscribeQuestion = window.petAgentQuestion.onChange((question) => {
+  bubbleElement.hidden = Boolean(question);
+});
 
 window.addEventListener('beforeunload', () => {
   unsubscribeStatus();
+  unsubscribeQuestion();
 });
 
 })();

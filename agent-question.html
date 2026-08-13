@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self'; script-src 'self'"
+  >
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>易标桌宠快捷回答</title>
+  <link rel="stylesheet" href="agent-question.css">
+</head>
+<body>
+  <main id="questionCard" class="question-card" aria-live="polite">
+    <header class="question-card__head">
+      <span class="question-card__eyebrow">小易需要你确认</span>
+      <span id="countdown" class="question-card__countdown" hidden></span>
+    </header>
+    <section id="questionCopy" class="question-card__copy"></section>
+    <div id="optionList" class="question-card__options" role="radiogroup" aria-label="可选回答"></div>
+    <section id="customPanel" class="question-card__custom" hidden>
+      <label id="customLabel" for="customAnswer">请输入具体要求</label>
+      <textarea id="customAnswer" rows="3" placeholder="请输入具体要求，Ctrl+Enter 快速提交"></textarea>
+      <button id="submitCustom" class="question-card__submit" type="button">确定并继续</button>
+    </section>
+    <p id="errorMessage" class="question-card__error" role="alert" hidden></p>
+  </main>
+  <script src="agent-question.js"></script>
+</body>
+</html>
