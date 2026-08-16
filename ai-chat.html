@@ -30,10 +30,10 @@
       <button id="closeButton" class="chat-card__close" type="button" aria-label="关闭对话框">×</button>
     </header>
     <div id="messageList" class="chat-card__messages" role="log" aria-label="对话记录">
-      <p id="emptyHint" class="chat-card__empty">向 Agent 描述你的目录调整要求，例如“把安全管理章节拆成两章”。</p>
+      <p id="emptyHint" class="chat-card__empty"></p>
     </div>
     <div id="warningBar" class="chat-card__warning" hidden>
-      <p class="chat-card__warning-text">调整目录将清空已生成的正文内容，是否继续？</p>
+      <p id="warningText" class="chat-card__warning-text"></p>
       <div class="chat-card__warning-actions">
         <button id="warningCancelButton" class="chat-card__warning-cancel" type="button">取消</button>
         <button id="warningConfirmButton" class="chat-card__warning-confirm" type="button">确认继续</button>
@@ -44,7 +44,7 @@
         id="messageInput"
         class="chat-card__input"
         rows="2"
-        placeholder="请输入目录调整要求…（Ctrl+Enter 发送）"
+        placeholder="请输入调整要求…（Ctrl+Enter 发送）"
       ></textarea>
       <button id="sendButton" class="chat-card__send" type="button" aria-label="发送">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

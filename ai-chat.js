@@ -7,6 +7,7 @@ const closeButton = document.getElementById('closeButton');
 const messageListElement = document.getElementById('messageList');
 const emptyHintElement = document.getElementById('emptyHint');
 const warningBarElement = document.getElementById('warningBar');
+const warningTextElement = document.getElementById('warningText');
 const warningCancelButton = document.getElementById('warningCancelButton');
 const warningConfirmButton = document.getElementById('warningConfirmButton');
 const inputElement = document.getElementById('messageInput');
@@ -83,6 +84,7 @@ function renderMessages() {
     rows.push(createMessageRow({ role: 'error', text: localError }));
   }
   if (rows.length === 0) {
+    emptyHintElement.textContent = String(currentWorkspace?.empty_hint || '');
     messageListElement.replaceChildren(emptyHintElement);
   } else {
     messageListElement.replaceChildren(...rows);
@@ -107,7 +109,11 @@ function renderControls() {
   const locked = !workspace || busy || pending || sending;
   inputElement.disabled = locked;
   sendButton.disabled = locked || !inputElement.value.trim();
-  warningBarElement.hidden = !warningPending;
+  const sendWarning = String(workspace?.send_warning || '').trim();
+  warningBarElement.hidden = !warningPending || !sendWarning;
+  if (warningPending && sendWarning) {
+    warningTextElement.textContent = sendWarning;
+  }
 }
 
 /** 渲染主进程推送的工作空间状态。 */
@@ -154,10 +160,11 @@ async function submitMessage() {
   }
 }
 
-/** 发送入口：已有正文时先弹出清空警告，确认后再提交。 */
+/** 发送入口：主程序下发 send_warning 时先确认，没有该字段则直接提交。 */
 function requestSend() {
   if (!currentWorkspace || !inputElement.value.trim()) return;
-  if (currentWorkspace.has_generated_content && !warningPending) {
+  const sendWarning = String(currentWorkspace.send_warning || '').trim();
+  if (sendWarning && !warningPending) {
     warningPending = true;
     renderControls();
     return;

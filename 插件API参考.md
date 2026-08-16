@@ -322,11 +322,11 @@ ctx.suppressOutlineSelectionAutoConfirmation({ taskId: task.task_id });
 
 ### Agent 工作空间 API
 
-主程序 `agentWorkspaceService` 向插件暴露可对话的通用 Agent 工作空间（当前仅内置目录生成工作空间，发送要求会以 `outline-adjustment` 受管任务 resume 持久会话）。插件不得绕过该服务直接操作持久 Agent 任务。
+主程序 `agentWorkspaceService` 向插件暴露可对话的通用 Agent 工作空间（当前内置目录生成与全局事实设定）。主程序按技术方案当前步骤标记唯一生效项；插件只打开 `active === true` 的工作空间，不要回退到 `workspaces[0]`。发送要求会以对应受管任务 resume 持久会话。插件不得绕过该服务直接操作持久 Agent 任务。
 
 #### `ctx.listAgentWorkspaces()`
 
-列出当前可对话的 Agent 工作空间；没有可用工作空间时返回空数组：
+列出当前可对话的 Agent 工作空间；没有可用工作空间时返回空数组。列表里可能有多项，但 `active` 同时最多一个，且只有出现在列表中、且 id 等于当前步骤映射的项才会为 `true`：
 
 ```javascript
 const workspaces = ctx.listAgentWorkspaces();
@@ -335,15 +335,21 @@ const workspaces = ctx.listAgentWorkspaces();
 //   title: '目录生成',
 //   status: 'ready' | 'busy',
 //   busy_reason: '正文生成任务执行中，请等待完成',   // status 为 busy 时的原因
-//   has_generated_content: false,                    // 目录下已有正文时为 true
+//   has_generated_content: false,                    // 已有正文叶子时为 true
+//   empty_hint: '向 Agent 描述你的目录调整要求…',    // 空对话提示，由主程序下发
+//   send_warning: '调整目录将清空已生成的正文内容，是否继续？', // 需要发送前确认时才有
+//   active: true,                                    // 当前步骤的生效工作空间
 //   pending: false,                                  // 上一条要求是否仍在处理
 //   messages: [{ id, role: 'user'|'agent'|'error', text, at }],
 // }]
+const active = workspaces.find((item) => item.active) || null;
 ```
+
+打开规则：只打开 `active === true` 的项；没有生效项时关闭对话并提示「当前步骤没有可对话的工作空间」。切到其它步骤等于离开旧工作空间：关掉对话框，不要自动打开新的。空对话提示用 `empty_hint`；发送前警告用 `send_warning`（没有该字段则不弹）。
 
 #### `ctx.sendAgentWorkspaceMessage(payload)`
 
-向指定工作空间发送用户要求。消息入列后立即返回，Agent 最终回复通过 `onAgentWorkspaceChatEvent()` 推送：
+向指定工作空间发送用户要求。目标必须是当前生效项，否则拒绝。消息入列后立即返回，Agent 最终回复通过 `onAgentWorkspaceChatEvent()` 推送：
 
 ```javascript
 const result = ctx.sendAgentWorkspaceMessage({
@@ -351,7 +357,7 @@ const result = ctx.sendAgentWorkspaceMessage({
   message: '把安全管理章节拆成两章',
 });
 // { success: true } 或 { success: false, error: '...' }
-// 工作空间不可用、要求为空或 Agent 忙碌时抛出错误
+// 工作空间不可用、不是当前生效项、要求为空或 Agent 忙碌时抛出错误
 ```
 
 #### `ctx.onAgentWorkspaceChatEvent(callback)`
@@ -361,6 +367,16 @@ const result = ctx.sendAgentWorkspaceMessage({
 ```javascript
 const unsubscribe = ctx.onAgentWorkspaceChatEvent((event) => {
   // event = { workspace_id, messages, pending }
+});
+```
+
+#### `ctx.onAgentWorkspacesChanged(callback)`
+
+订阅工作空间列表与生效项变更（技术方案步骤切换、空间就绪状态变化），返回取消订阅函数。事件为 `{ active_workspace_id, workspaces }`。若当前打开的对话 id 不是 `active`，应关闭对话框，不要切换到新空间：
+
+```javascript
+const unsubscribe = ctx.onAgentWorkspacesChanged((event) => {
+  // event = { active_workspace_id, workspaces }
 });
 ```
 
@@ -375,7 +391,7 @@ module.exports = {
   async activate(ctx) { /* ... */ },
   async onHostEvent(event, payload) {
     if (event === 'open-ai-chat') {
-      // 主程序请求打开 AI 对话框
+      // 打开当前生效的 Agent 工作空间；忽略 payload
     }
   },
   async deactivate() { /* ... */ },
@@ -755,7 +771,7 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
 | `task:subscribe` | 订阅任务事件 | `onTaskEvent()` |
 | `agent:question` | 响应 Agent 问答 | `getPendingAgentQuestion()`, `onAgentQuestion()`, `answerAgentQuestion()`, `suppressAgentQuestionAutoAnswer()` |
 | `task:confirm` | 确认一级目录选择 | `confirmOutlineSelection()`, `suppressOutlineSelectionAutoConfirmation()` |
-| `agent:workspace` | 与 Agent 工作空间对话 | `listAgentWorkspaces()`, `sendAgentWorkspaceMessage()`, `onAgentWorkspaceChatEvent()` |
+| `agent:workspace` | 与 Agent 工作空间对话 | `listAgentWorkspaces()`, `sendAgentWorkspaceMessage()`, `onAgentWorkspaceChatEvent()`, `onAgentWorkspacesChanged()` |
 | `window:create` | 创建独立窗口 | `createWindow()` |
 
 ### 无需权限的 API
@@ -866,6 +882,9 @@ interface PluginContext {
   onAgentWorkspaceChatEvent?: (
     callback: (event: AgentWorkspaceChatEvent) => void,
   ) => () => void;
+  onAgentWorkspacesChanged?: (
+    callback: (event: AgentWorkspacesChangedEvent) => void,
+  ) => () => void;
 
   // 窗口 API（需要 window:create 权限）
   createWindow?: (options: BrowserWindowConstructorOptions) => BrowserWindow;
@@ -884,6 +903,9 @@ interface AgentWorkspace {
   status: 'ready' | 'busy';
   busy_reason?: string;
   has_generated_content: boolean;
+  empty_hint: string;
+  send_warning?: string;
+  active: boolean;
   pending: boolean;
   messages: AgentWorkspaceMessage[];
 }
@@ -892,6 +914,11 @@ interface AgentWorkspaceChatEvent {
   workspace_id: string;
   messages: AgentWorkspaceMessage[];
   pending: boolean;
+}
+
+interface AgentWorkspacesChangedEvent {
+  active_workspace_id: string | null;
+  workspaces: AgentWorkspace[];
 }
 ```
 

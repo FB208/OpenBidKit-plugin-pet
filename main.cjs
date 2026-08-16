@@ -99,6 +99,7 @@ const runtime = {
   unsubscribeTask: null,
   unsubscribeAgentQuestion: null,
   unsubscribeWorkspaceChat: null,
+  unsubscribeWorkspacesChanged: null,
   terminalTimer: null,
   transientNoticeTimer: null,
   aiChatRefreshTimer: null,
@@ -657,6 +658,23 @@ function publishAiChatState() {
   );
 }
 
+/** 从工作空间列表中取出当前生效项；同时最多一个。 */
+function findActiveWorkspace(workspaces) {
+  return (workspaces || []).find((workspace) => workspace.active === true) || null;
+}
+
+/** 打开中的对话必须仍是生效项；否则关闭，不自动切到新空间。 */
+function syncOpenAiChatWithWorkspaces(workspaces) {
+  if (!runtime.aiChatOpen) return;
+  const active = findActiveWorkspace(workspaces);
+  if (!active || active.id !== runtime.aiChatWorkspace?.id) {
+    closeAiChat();
+    return;
+  }
+  runtime.aiChatWorkspace = active;
+  publishAiChatState();
+}
+
 /** 重新读取 Agent 工作空间列表并刷新 AI 对话内容。 */
 function refreshAiChatWorkspace() {
   if (!runtime.ctx || !runtime.aiChatOpen) return;
@@ -668,16 +686,16 @@ function refreshAiChatWorkspace() {
     runtime.ctx.logger.error('读取 Agent 工作空间失败:', error);
     return;
   }
-  const current = workspaces.find(
-    (workspace) => workspace.id === runtime.aiChatWorkspace?.id,
-  ) || workspaces[0] || null;
-  if (!current) {
-    closeAiChat();
-    showTransientNotice('当前没有可执行任务', '目录生成完成后可通过 AI 对话调整');
+  syncOpenAiChatWithWorkspaces(workspaces);
+}
+
+/** 主程序推送工作空间变更：切步时关闭已打开且不再生效的对话。 */
+function handleWorkspacesChanged(event) {
+  if (Array.isArray(event?.workspaces)) {
+    syncOpenAiChatWithWorkspaces(event.workspaces);
     return;
   }
-  runtime.aiChatWorkspace = current;
-  publishAiChatState();
+  refreshAiChatWorkspace();
 }
 
 /** 任务事件后延迟刷新 AI 对话，避免高频任务事件反复读库。 */
@@ -690,7 +708,7 @@ function scheduleAiChatRefresh() {
   }, AI_CHAT_REFRESH_DELAY_MS);
 }
 
-/** 打开 AI 对话；无可用工作空间时用气泡短暂提示。 */
+/** 打开当前生效的 AI 对话；没有生效项时关闭并提示。 */
 function openAiChat() {
   if (!runtime.ctx) return;
   if (typeof runtime.ctx.listAgentWorkspaces !== 'function') {
@@ -705,14 +723,13 @@ function openAiChat() {
     showTransientNotice('读取 Agent 工作空间失败', '请稍后重试');
     return;
   }
-  if (!workspaces.length) {
+  const active = findActiveWorkspace(workspaces);
+  if (!active) {
     closeAiChat();
-    showTransientNotice('当前没有可执行任务', '目录生成完成后可通过 AI 对话调整');
+    showTransientNotice('当前步骤没有可对话的工作空间');
     return;
   }
-  runtime.aiChatWorkspace = workspaces.find(
-    (workspace) => workspace.id === runtime.aiChatWorkspace?.id,
-  ) || workspaces[0];
+  runtime.aiChatWorkspace = active;
   runtime.aiChatOpen = true;
   publishAiChatState();
   syncInteractiveWindows();
@@ -1967,6 +1984,10 @@ function cleanupRuntime() {
     runtime.unsubscribeWorkspaceChat();
     runtime.unsubscribeWorkspaceChat = null;
   }
+  if (runtime.unsubscribeWorkspacesChanged) {
+    runtime.unsubscribeWorkspacesChanged();
+    runtime.unsubscribeWorkspacesChanged = null;
+  }
   if (runtime.hostWindow && !runtime.hostWindow.isDestroyed()) {
     runtime.hostWindow.removeListener('closed', handleHostWindowClosed);
   }
@@ -2043,6 +2064,9 @@ module.exports = {
     runtime.unsubscribeAgentQuestion = ctx.onAgentQuestion(handleAgentQuestion);
     if (typeof ctx.onAgentWorkspaceChatEvent === 'function') {
       runtime.unsubscribeWorkspaceChat = ctx.onAgentWorkspaceChatEvent(handleWorkspaceChatEvent);
+    }
+    if (typeof ctx.onAgentWorkspacesChanged === 'function') {
+      runtime.unsubscribeWorkspacesChanged = ctx.onAgentWorkspacesChanged(handleWorkspacesChanged);
     }
     publishAgentQuestion(ctx.getPendingAgentQuestion());
     restorePendingOutlineSelection();
