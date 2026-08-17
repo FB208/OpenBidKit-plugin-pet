@@ -322,11 +322,11 @@ ctx.suppressOutlineSelectionAutoConfirmation({ taskId: task.task_id });
 
 ### Agent 工作空间 API
 
-主程序 `agentWorkspaceService` 向插件暴露可对话的通用 Agent 工作空间（当前内置目录生成与全局事实设定）。主程序按技术方案当前步骤标记唯一生效项；插件只打开 `active === true` 的工作空间，不要回退到 `workspaces[0]`。发送要求会以对应受管任务 resume 持久会话。插件不得绕过该服务直接操作持久 Agent 任务。
+主程序 `agentWorkspaceService` 向插件暴露可对话的通用 Agent 工作空间（当前内置目录生成与全局事实设定）。主程序按当前可见页标记唯一生效项；`active` 表示当前可见页的生效工作空间，不是库里上次的步骤。插件只打开 `active === true` 的工作空间，不要回退到 `workspaces[0]`。发送要求会以对应受管任务 resume 持久会话。插件不得绕过该服务直接操作持久 Agent 任务。
 
 #### `ctx.listAgentWorkspaces()`
 
-列出当前可对话的 Agent 工作空间；没有可用工作空间时返回空数组。列表里可能有多项，但 `active` 同时最多一个，且只有出现在列表中、且 id 等于当前步骤映射的项才会为 `true`：
+列出当前可对话的 Agent 工作空间；没有可用工作空间时返回空数组。列表里可能有多项，但 `active` 同时最多一个，且只有出现在列表中、且 id 等于当前可见页映射的项才会为 `true`：
 
 ```javascript
 const workspaces = ctx.listAgentWorkspaces();
@@ -338,7 +338,7 @@ const workspaces = ctx.listAgentWorkspaces();
 //   has_generated_content: false,                    // 已有正文叶子时为 true
 //   empty_hint: '向 Agent 描述你的目录调整要求…',    // 空对话提示，由主程序下发
 //   send_warning: '调整目录将清空已生成的正文内容，是否继续？', // 需要发送前确认时才有
-//   active: true,                                    // 当前步骤的生效工作空间
+//   active: true,                                    // 当前可见页的生效工作空间，不是库里上次的步骤
 //   pending: false,                                  // 上一条要求是否仍在处理
 //   messages: [{ id, role: 'user'|'agent'|'error', text, at }],
 // }]
