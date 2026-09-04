@@ -42,6 +42,19 @@ const DRAG_FRAME_INTERVAL_MS = 16;
 const DRAG_MAX_DURATION_MS = 60_000;
 // 渲染层没能上报 logo 就绪时，页面加载完这么久后强制显示桌宠。
 const PET_SHOW_FALLBACK_MS = 1_500;
+// 卡片的 CSS 与完整版共用，这里就地注入覆盖，只影响简化版：
+// 去掉全部过渡与动画；去掉卡片投影，改用 1px 中性描边（原描边是白色，浅色桌面上等于没有边界）。
+const SIMPLE_OVERRIDE_CSS = `
+*, *::before, *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+body > main {
+  box-shadow: none !important;
+  border-color: rgb(15 23 42 / 14%) !important;
+}
+`;
 
 const TASK_LABELS = Object.freeze({
   'bid-section-extraction': '多标段识别',
@@ -727,6 +740,9 @@ function advancePetDrag() {
   const [currentX, currentY] = win.getPosition();
   if (currentX === nextX && currentY === nextY) return;
   win.setPosition(nextX, nextY);
+  // 同帧把气泡与交互卡片一起挪走：'move' 事件是异步派发的，等它回调会慢一帧、拖出拖影。
+  syncBubblePosition();
+  syncInteractiveWindowPositions();
 }
 
 /** 桌宠窗口落位后同步气泡与交互卡片。 */
@@ -824,8 +840,19 @@ function applyInteractiveWindowHeight(win, requestedHeight, visible) {
     INTERACTIVE_WINDOW_MIN_HEIGHT,
     maximumHeight,
   );
-  if (win.getBounds().height !== height) {
-    win.setSize(INTERACTIVE_WINDOW_WIDTH, height, false);
+  const current = win.getBounds();
+  if (current.height !== height) {
+    // Windows 上 resizable:false 会让 setSize 被忽略（实测：420x320 调 setSize 纹丝不动，
+    // setBounds 才生效），并且高度与位置必须一次提交，否则会先变高再挪位、出现中间帧。
+    const position = petBounds
+      ? calculateInteractiveWindowPosition(petBounds, INTERACTIVE_WINDOW_WIDTH, height)
+      : { x: current.x, y: current.y };
+    win.setBounds({
+      x: position.x,
+      y: position.y,
+      width: INTERACTIVE_WINDOW_WIDTH,
+      height,
+    });
   }
   if (visible) showInteractiveWindow(win);
 }
@@ -1065,6 +1092,7 @@ function createBubbleWindow(ctx) {
   win.setIgnoreMouseEvents(true);
   win.webContents.on('did-finish-load', () => {
     if (runtime.bubbleWindow !== win) return;
+    void win.webContents.insertCSS(SIMPLE_OVERRIDE_CSS);
     runtime.bubbleRendererReady = true;
     sendToWindow(win, STATUS_CHANNEL, runtime.latestStatus);
     sendToWindow(win, AGENT_QUESTION_CHANNEL, runtime.latestAgentQuestion);
@@ -1112,7 +1140,10 @@ function createInteractiveWindow(ctx, htmlFile, onFinishLoad, onClosed) {
   win.setMenuBarVisibility(false);
   win.setAlwaysOnTop(true, 'screen-saver');
   // did-finish-load 由 Electron 主进程保证触发，显示与补发状态都不依赖渲染层主动上报。
-  win.webContents.on('did-finish-load', () => onFinishLoad(win));
+  win.webContents.on('did-finish-load', () => {
+    void win.webContents.insertCSS(SIMPLE_OVERRIDE_CSS);
+    onFinishLoad(win);
+  });
   win.on('closed', () => onClosed(win));
   void win.loadFile(path.join(__dirname, htmlFile));
   return win;
