@@ -4,6 +4,20 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已存在的发布 Tag，例如 v1.6.0"
+        required: true
+        type: string
+      variant:
+        description: "打包哪个版本（tag 推送固定为 simple）"
+        required: true
+        type: choice
+        default: full
+        options:
+          - full
+          - simple
 
 permissions:
   contents: write
@@ -17,19 +31,29 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 读取并校验版本
+      - name: 解析 Tag、版本与打包变体
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
+          $isManual = "${{ github.event_name }}" -eq "workflow_dispatch"
+          $tag = if ($isManual) { "${{ inputs.tag }}" } else { "${{ github.ref_name }}" }
           if ($tag -notmatch '^v(?<version>(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*))$') {
             throw "Tag 必须使用 vX.Y.Z 格式：$tag"
           }
+          # 临时阶段：tag 推送默认发布简化版，完整版通过手动触发选择。
+          $variant = if ($isManual) { "${{ inputs.variant }}" } else { "simple" }
+          "PLUGIN_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "PLUGIN_VERSION=$($Matches.version)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PLUGIN_VARIANT=$variant" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Tag=$tag Version=$($Matches.version) Variant=$variant"
 
       - name: 生成发布包
         shell: pwsh
         run: |
-          .\scripts\package.ps1 -Version $env:PLUGIN_VERSION
+          if ($env:PLUGIN_VARIANT -eq "simple") {
+            .\scripts\package-simple.ps1 -Version $env:PLUGIN_VERSION
+          } else {
+            .\scripts\package.ps1 -Version $env:PLUGIN_VERSION
+          }
 
       - name: 创建 Release 并上传插件包
         shell: pwsh
@@ -37,7 +61,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $archive = "dist\openbidkit-pet-v$env:PLUGIN_VERSION.zip"
-          gh release create "${{ github.ref_name }}" $archive `
-            --verify-tag `
-            --title "易标桌宠 ${{ github.ref_name }}" `
-            --generate-notes
+          if (-not (Test-Path -LiteralPath $archive)) {
+            throw "未找到发布包：$archive"
+          }
+
+          # 手动重打同一个 Tag 时 Release 已存在，覆盖资产而不是重复创建。
+          gh release view $env:PLUGIN_TAG *> $null
+          $releaseExists = ($LASTEXITCODE -eq 0)
+          $global:LASTEXITCODE = 0
+
+          if ($releaseExists) {
+            Write-Host "Release $env:PLUGIN_TAG 已存在，覆盖资产（variant=$env:PLUGIN_VARIANT）"
+            gh release upload $env:PLUGIN_TAG $archive --clobber
+          } else {
+            gh release create $env:PLUGIN_TAG $archive `
+              --verify-tag `
+              --title "易标桌宠 $env:PLUGIN_TAG" `
+              --generate-notes
+          }
