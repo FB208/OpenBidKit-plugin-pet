@@ -7,6 +7,7 @@
     "main":  "main.cjs",
     "scripts":  {
                     "package":  "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/package.ps1",
-                    "deploy:local":  "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/deploy-local.ps1"
+                    "deploy:local":  "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/deploy-local.ps1",
+                    "deploy:local:simple":  "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/deploy-local-simple.ps1"
                 }
 }

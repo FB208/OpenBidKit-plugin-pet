@@ -1,0 +1,26 @@
+{
+  "id": "openbidkit-pet",
+  "name": "易标桌宠（简化版）",
+  "version": "1.5.0",
+  "description": "静态 logo 悬浮窗版本：保留任务状态、Agent 问答、一级目录确认与 AI 对话，去除全部动画与自动移动。",
+  "author": "FB208",
+  "repository": "https://github.com/FB208/OpenBidKit-plugin-pet",
+  "releaseUrl": "https://github.com/FB208/OpenBidKit-plugin-pet/releases/download/v1.5.0/openbidkit-pet-v1.5.0.zip",
+  "tags": [
+    "桌宠",
+    "悬浮窗",
+    "任务状态",
+    "Agent问答",
+    "目录选择",
+    "AI对话"
+  ],
+  "permissions": [
+    "task:read",
+    "task:subscribe",
+    "agent:question",
+    "task:confirm",
+    "agent:workspace",
+    "window:create"
+  ],
+  "hasConfig": false
+}
