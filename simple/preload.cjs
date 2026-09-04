@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const STATUS_CHANNEL = 'plugin:openbidkit-pet:status';
+const BUBBLE_WIDTH_CHANNEL = 'plugin:openbidkit-pet:bubble-width';
 const PET_READY_CHANNEL = 'plugin:openbidkit-pet:pet-ready';
 const PET_DRAG_START_CHANNEL = 'plugin:openbidkit-pet:pet-drag-start';
 const PET_DRAG_END_CHANNEL = 'plugin:openbidkit-pet:pet-drag-end';
@@ -29,6 +30,11 @@ contextBridge.exposeInMainWorld('petStatus', {
     const listener = (_event, status) => callback(status);
     ipcRenderer.on(STATUS_CHANNEL, listener);
     return () => ipcRenderer.removeListener(STATUS_CHANNEL, listener);
+  },
+
+  /** 上报气泡实际绘制宽度，供主进程按可见部分而非整窗定位。 */
+  reportBubbleWidth(width) {
+    ipcRenderer.send(BUBBLE_WIDTH_CHANNEL, width);
   },
 });
 

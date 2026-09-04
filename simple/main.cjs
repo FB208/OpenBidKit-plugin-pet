@@ -3,6 +3,7 @@ const { BrowserWindow, Menu, ipcMain, screen } = require('electron');
 
 const PLUGIN_ID = 'openbidkit-pet';
 const STATUS_CHANNEL = `plugin:${PLUGIN_ID}:status`;
+const BUBBLE_WIDTH_CHANNEL = `plugin:${PLUGIN_ID}:bubble-width`;
 const PET_READY_CHANNEL = `plugin:${PLUGIN_ID}:pet-ready`;
 const PET_DRAG_START_CHANNEL = `plugin:${PLUGIN_ID}:pet-drag-start`;
 const PET_DRAG_END_CHANNEL = `plugin:${PLUGIN_ID}:pet-drag-end`;
@@ -94,6 +95,8 @@ const runtime = {
   ipcRegistered: false,
   petHiddenByUser: false,
   bubbleRendererReady: false,
+  // 气泡实际绘制宽度；渲染层上报前按整窗宽兜底，等价于修复前的行为。
+  bubblePillWidth: BUBBLE_WINDOW_WIDTH,
   agentQuestionRendererReady: false,
   outlineSelectionRendererReady: false,
   aiChatRendererReady: false,
@@ -257,10 +260,14 @@ function getInitialPosition() {
 /** 计算状态气泡在桌宠附近且不越出工作区的位置。 */
 function calculateBubbleWindowPosition(petBounds) {
   const { workArea } = screen.getDisplayMatching(petBounds);
-  const minimumX = workArea.x + BUBBLE_EDGE_MARGIN;
+  // 气泡是 fit-content 宽度并在窗口内居中，两侧留白全透明。夹取必须按药丸的可见
+  // 边缘算，否则窗口会被透明留白提前顶住（实测左右各 100px），桌宠贴边时气泡脱钩。
+  const pillWidth = clamp(runtime.bubblePillWidth, 0, BUBBLE_WINDOW_WIDTH);
+  const pillInset = Math.round((BUBBLE_WINDOW_WIDTH - pillWidth) / 2);
+  const minimumX = workArea.x + BUBBLE_EDGE_MARGIN - pillInset;
   const maximumX = Math.max(
     minimumX,
-    workArea.x + workArea.width - BUBBLE_WINDOW_WIDTH - BUBBLE_EDGE_MARGIN,
+    workArea.x + workArea.width - BUBBLE_WINDOW_WIDTH - BUBBLE_EDGE_MARGIN + pillInset,
   );
   const minimumY = workArea.y + BUBBLE_EDGE_MARGIN;
   const maximumY = Math.max(
@@ -332,6 +339,15 @@ function showInteractiveWindow(win) {
 /** 隐藏交互窗口。 */
 function hideInteractiveWindow(win) {
   if (win && !win.isDestroyed() && win.isVisible()) win.hide();
+}
+
+/** 接收气泡实际绘制宽度，并立即按新宽度重新定位。 */
+function handleBubbleWidth(event, requestedWidth) {
+  if (!isWindowSender(event, runtime.bubbleWindow)) return;
+  const width = clamp(Math.ceil(Number(requestedWidth) || 0), 0, BUBBLE_WINDOW_WIDTH);
+  if (width === 0 || width === runtime.bubblePillWidth) return;
+  runtime.bubblePillWidth = width;
+  syncBubblePosition();
 }
 
 /** 让状态气泡跟随桌宠窗口。 */
@@ -953,6 +969,7 @@ function handleAiChatClose(event) {
 /** 注册简化版桌宠所需的主进程 IPC。 */
 function registerIpc() {
   if (runtime.ipcRegistered) return;
+  ipcMain.on(BUBBLE_WIDTH_CHANNEL, handleBubbleWidth);
   ipcMain.on(PET_READY_CHANNEL, handlePetReady);
   ipcMain.on(PET_DRAG_START_CHANNEL, handlePetDragStart);
   ipcMain.on(PET_DRAG_END_CHANNEL, handlePetDragEnd);
@@ -974,6 +991,7 @@ function registerIpc() {
 /** 注销 IPC，避免插件重载后重复注册。 */
 function unregisterIpc() {
   if (!runtime.ipcRegistered) return;
+  ipcMain.removeListener(BUBBLE_WIDTH_CHANNEL, handleBubbleWidth);
   ipcMain.removeListener(PET_READY_CHANNEL, handlePetReady);
   ipcMain.removeListener(PET_DRAG_START_CHANNEL, handlePetDragStart);
   ipcMain.removeListener(PET_DRAG_END_CHANNEL, handlePetDragEnd);
@@ -1277,6 +1295,7 @@ function cleanupRuntime() {
   const bubbleWindow = runtime.bubbleWindow;
   runtime.bubbleWindow = null;
   runtime.bubbleRendererReady = false;
+  runtime.bubblePillWidth = BUBBLE_WINDOW_WIDTH;
   if (bubbleWindow && !bubbleWindow.isDestroyed()) bubbleWindow.close();
 
   const petWindow = runtime.petWindow;
